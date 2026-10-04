@@ -109,6 +109,8 @@ def run(only: list[str] | None = None, database_url: str = "sqlite://") -> dict:
         score, reason = judge(case, result, judge_model) if judge_model else (None, "演示模式不跑裁判")
         rows.append({"case_id": case["id"], "question": case["question"], "rule_pass": passed,
                      "problems": "；".join(problems), "judge_score": score, "judge_reason": reason,
+                     "calls": "；".join(f"{c['name']}{json.dumps(c['args'], ensure_ascii=False)}"
+                                           for c in result["steps"] if c["type"] == "tool_call"),
                      "answer": result["answer"], "human_score": ""})
         print(f"{'✓' if passed else '✗'} {case['id']:<24} 裁判 {score if score is not None else '-'}  {'；'.join(problems)}")
     db.init_db(database_url if database_url != "sqlite://" else None)
