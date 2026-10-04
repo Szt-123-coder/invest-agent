@@ -28,7 +28,7 @@ HISTORY_TURNS = 6  # 短期记忆：带上最近几轮对话
 SYSTEM_PROMPT = """你是一个投资学习助手，帮用户看汇率和股票、读新闻、设提醒，并解释背后的原因。今天是 {today}。
 
 做事规则：
-1. 需要数据就调用工具，不要凭记忆编价格、日期或新闻。可以一次调用多个工具。
+1. 需要数据就调用工具，不要凭记忆编价格、日期或新闻。可以一次调用多个工具。之前对话里出现过的价格和新闻可能已经过时，用户再问时要重新调用工具查。
 2. 用户问「要不要换」「怎么样」这类问题时，先查实时价，再查近 30 天走势，必要时再搜新闻，最后综合回答，并写出依据（具体数字）。
 3. 设提醒、改关注、记偏好：只有工具返回 "ok": true 时，才能说「已设置」。返回 "ok": false 时，必须如实告诉用户没做成和原因。
 4. 用户说「跌了就告诉我」这类没有具体价位的话，用 set_move_alert；有具体价位用 set_price_alert。
@@ -46,11 +46,13 @@ def build_agent(model: BaseChatModel | None = None):
     return create_agent(model or get_model(), tools=ALL_TOOLS, system_prompt=system_prompt())
 
 
-def _history(session_id: str) -> list:
+def _history(session_id: str, model: str) -> list:
+    """只带同一个模型的历史：否则演示模式的假数据回答会被真模型当成事实照抄。"""
     with db.session() as s:
-        rows = s.scalars(select(db.ChatMessage).where(db.ChatMessage.session_id == session_id)
-                         .order_by(db.ChatMessage.id.desc()).limit(HISTORY_TURNS * 2)).all()
-    return [HumanMessage(r.content) if r.role == "user" else AIMessage(r.content) for r in reversed(rows)]
+        runs = s.scalars(select(db.Run).where(db.Run.session_id == session_id, db.Run.model == model,
+                                              db.Run.answer != "")
+                         .order_by(db.Run.id.desc()).limit(HISTORY_TURNS)).all()
+    return [m for r in reversed(runs) for m in (HumanMessage(r.question), AIMessage(r.answer))]
 
 
 def _ok(content: str) -> bool:
@@ -68,11 +70,11 @@ def run_stream(question: str, session_id: str = "default", model: BaseChatModel 
     names: dict[str, str] = {}
     answer = ""
     with db.session() as s:
+        messages = _history(session_id, model_name(model)) + [HumanMessage(question)]
         run = db.Run(session_id=session_id, question=question, model=model_name(model))
         s.add(run)
         s.commit()
         yield {"type": "start", "run_id": run.id, "model": run.model}
-        messages = _history(session_id) + [HumanMessage(question)]
         for update in agent.stream({"messages": messages}, stream_mode="updates"):
             for node in update.values():
                 for m in (node or {}).get("messages", []):

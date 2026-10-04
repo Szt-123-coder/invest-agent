@@ -56,3 +56,11 @@ def test_short_term_memory_keeps_history():
     with db.session() as s:
         rows = s.scalars(select(db.ChatMessage).where(db.ChatMessage.session_id == "s1")).all()
     assert [m.role for m in rows] == ["user", "assistant", "user", "assistant"]
+
+
+def test_history_only_from_same_model():
+    """演示模式的假数据回答不能带进真模型的上下文，否则真模型会照抄。"""
+    from app.agent import _history
+    ask("美元现在多少", session_id="s2")
+    assert len(_history("s2", "demo-rules")) == 2
+    assert _history("s2", "deepseek-chat") == []
