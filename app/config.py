@@ -3,6 +3,11 @@
 import os
 from dataclasses import dataclass, field
 
+from dotenv import load_dotenv
+
+# 读取项目根目录的 .env；已经设置的环境变量（比如服务器上配的）优先，不会被覆盖
+load_dotenv()
+
 
 def _env(name: str, default: str = ""):
     return field(default_factory=lambda: os.getenv(name, default))
