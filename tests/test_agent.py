@@ -70,8 +70,8 @@ def test_history_only_from_same_model():
 
 def test_stock_analysis_compares_with_index():
     from app.symbols import benchmark
-    assert [benchmark(s) for s in ["NVDA", "600519.SS", "0700.HK", "BHP.AX", "AUD/CNY"]] == \
-        ["^GSPC", "000300.SS", "^HSI", "^AXJO", None]
+    assert [benchmark(s) for s in ["NVDA", "600519.SS", "0700.HK", "BHP.AX", "005930.KS", "7203.T", "AUD/CNY"]] == \
+        ["^GSPC", "000300.SS", "^HSI", "^AXJO", "^KS11", "^N225", None]
     r = ask("分析一下英伟达（NVDA）最近 30 天的走势，和大盘比怎么样，有什么风险？")
     assert "compare_with_index" in tool_names(r)
     assert any(e["source"] == "compare_with_index" for e in r["structured"]["evidence"])

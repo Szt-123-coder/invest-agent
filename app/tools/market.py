@@ -24,7 +24,7 @@ def _fake_series(symbol: str, days: int) -> list[tuple[str, float]]:
     """
     seed = int(hashlib.md5(symbol.encode()).hexdigest()[:8], 16)
     base = {"AUD/CNY": 4.62, "USD/CNY": 7.12, "EUR/CNY": 7.75, "^GSPC": 5800, "000300.SS": 3900, "^HSI": 21000,
-            "^AXJO": 8200}.get(symbol, 50 + seed % 300)
+            "^AXJO": 8200, "^KS11": 2600, "^N225": 38000}.get(symbol, 50 + seed % 300)
     today = date(2026, 10, 2)
     out = []
     for k in range(days - 1, -1, -1):
@@ -145,7 +145,7 @@ def find_similar_history(symbol: str, lookback_days: int = 30, horizon_days: int
 def compare_with_index(symbol: str, days: int = 30) -> str:
     """把一只股票最近 days 天（默认 30）的涨跌和它所在市场的大盘指数比较。
 
-    A 股比沪深300，港股比恒生指数，澳股比 ASX 200，其他比标普500。
+    A 股比沪深300，港股比恒生指数，澳股比 ASX 200，韩股比 KOSPI，日股比日经225，其他比标普500。
     返回两者的涨跌幅、超额收益（股票减大盘），以及每日涨跌的相关系数（越接近 1 越是跟着大盘走）。
     """
     sym = normalize(symbol)

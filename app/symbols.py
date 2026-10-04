@@ -20,6 +20,9 @@ STOCKS = {
     "阿里巴巴": "BABA", "阿里": "BABA", "京东": "JD", "拼多多": "PDD", "百度": "BIDU", "网易": "NTES",
     "苹果": "AAPL", "英伟达": "NVDA", "特斯拉": "TSLA", "微软": "MSFT", "谷歌": "GOOGL", "亚马逊": "AMZN",
     "脸书": "META", "奈飞": "NFLX", "台积电": "TSM", "英特尔": "INTC", "可口可乐": "KO",
+    # 日股、韩股
+    "三星": "005930.KS", "三星电子": "005930.KS", "SK海力士": "000660.KS", "丰田": "7203.T", "索尼": "6758.T",
+    "任天堂": "7974.T",
     # 澳股
     "必和必拓": "BHP.AX", "力拓": "RIO.AX", "联邦银行": "CBA.AX", "澳洲联邦银行": "CBA.AX",
 }
@@ -37,7 +40,7 @@ def check_known(symbol: str) -> None:
     if symbol in UNLISTED:
         raise UnknownSymbol(f"{symbol}没有上市，所以没有股价")
     if not re.fullmatch(r"[A-Z0-9.^/=-]+", symbol):
-        raise UnknownSymbol(f"不认识「{symbol}」。可以直接输入股票代码，比如 AAPL、600519.SS（上海）、000858.SZ（深圳）、0700.HK（香港）")
+        raise UnknownSymbol(f"不认识「{symbol}」。可以直接输入股票代码，比如 AAPL、600519.SS（上海）、000858.SZ（深圳）、0700.HK（香港）、005930.KS（韩国）、7203.T（日本）")
 
 
 def normalize(text: str) -> str:
@@ -85,11 +88,12 @@ def yahoo_ticker(symbol: str) -> str:
     return symbol.replace("/", "") + "=X" if is_pair(symbol) else symbol
 
 
-INDEXES = {"000300.SS": "沪深300", "^HSI": "恒生指数", "^AXJO": "澳洲 ASX 200", "^GSPC": "标普500"}
+INDEXES = {"000300.SS": "沪深300", "^HSI": "恒生指数", "^AXJO": "澳洲 ASX 200", "^KS11": "韩国综合指数",
+           "^N225": "日经225", "^GSPC": "标普500"}
 
 
 def benchmark(symbol: str) -> str | None:
-    """股票对应的大盘指数：A 股比沪深300，港股比恒生，澳股比 ASX 200，其他比标普500。货币对没有大盘。"""
+    """股票对应的大盘指数：A 股比沪深300，港股比恒生，澳股比 ASX 200，韩股比 KOSPI，日股比日经225，其他比标普500。"""
     if is_pair(symbol) or symbol in INDEXES:
         return None
     if symbol.endswith((".SS", ".SZ")):
@@ -98,6 +102,10 @@ def benchmark(symbol: str) -> str | None:
         return "^HSI"
     if symbol.endswith(".AX"):
         return "^AXJO"
+    if symbol.endswith((".KS", ".KQ")):
+        return "^KS11"
+    if symbol.endswith(".T"):
+        return "^N225"
     return "^GSPC"
 
 
