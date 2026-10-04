@@ -18,23 +18,25 @@ YAHOO = "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
 
 
 def _fake_series(symbol: str, days: int) -> list[tuple[str, float]]:
-    """按代码生成一条稳定的假走势，同一个代码每次都一样，方便演示和测试。"""
+    """按代码生成一条稳定的假走势，同一个代码每次都一样，方便演示和测试。
+
+    第 k 天前的价格只和 k 有关，所以查 30 天和查 3 年看到的是同一条走势的不同长度。
+    """
     seed = int(hashlib.md5(symbol.encode()).hexdigest()[:8], 16)
     base = {"AUD/CNY": 4.62, "USD/CNY": 7.12, "EUR/CNY": 7.75}.get(symbol, 50 + seed % 300)
     today = date(2026, 10, 2)
-    total = 365  # 先生成一整年，再取最后 days 天，这样不同查询看到的是同一条走势
     out = []
-    for i in range(total):
-        d = today - timedelta(days=total - 1 - i)
-        wave = math.sin((i + seed % 7) / 4) * 0.012 + (i - total) * 0.00004
-        out.append((d.isoformat(), round(base * (1 + wave), 4)))
-    return out[-days:]
+    for k in range(days - 1, -1, -1):
+        i = 364 - k
+        wave = math.sin((i + seed % 7) / 4) * 0.012 + math.sin(i / 37) * 0.01 + (i - 365) * 0.00004
+        out.append(((today - timedelta(days=k)).isoformat(), round(base * (1 + wave), 4)))
+    return out
 
 
 def fetch_series(symbol: str, days: int = 30) -> list[tuple[str, float]]:
     if get_settings().demo_mode:
         return _fake_series(symbol, days)
-    rng = "1mo" if days <= 31 else "3mo" if days <= 92 else "1y"
+    rng = next(r for n, r in ((31, "1mo"), (92, "3mo"), (366, "1y"), (731, "2y"), (10**9, "5y")) if days <= n)
     r = httpx.get(YAHOO.format(ticker=yahoo_ticker(symbol)), params={"range": rng, "interval": "1d"},
                   headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
     r.raise_for_status()
@@ -81,3 +83,53 @@ def get_history(symbol: str, days: int = 30) -> str:
         "daily_volatility_pct": round(statistics.pstdev(rets) * 100, 3),
         "position_in_range_pct": round((last - min(prices)) / ((max(prices) - min(prices)) or 1) * 100),
     })
+
+
+@tool
+def find_similar_history(symbol: str, lookback_days: int = 30, horizon_days: int = 30, years: int = 3) -> str:
+    """在过去几年的真实走势里，找和现在相似的时候，统计之后 horizon_days 天怎么走。
+
+    「相似」指：最近 lookback_days 个交易日的涨跌幅接近（相差不超过历史上这个涨跌幅波动的 1/4），
+    而且当前价在这段区间里的位置接近（相差不超过 20 个百分点）。
+    适合回答「要不要换」「会不会继续跌」这类问题时，用历史数据当依据。样本少时结论不可靠。
+    """
+    sym = normalize(symbol)
+    w = max(5, min(int(lookback_days), 120))
+    h = max(5, min(int(horizon_days), 120))
+    years = max(1, min(int(years), 5))
+    try:
+        pts = fetch_series(sym, years * 365)
+    except Exception as e:
+        return dumps({"ok": False, "error": f"查不到 {sym} 的历史数据：{e}"})
+    p = [x for _, x in pts]
+    if len(p) < 2 * w + h + 10:
+        return dumps({"ok": False, "error": f"{sym} 历史数据不够长，只有 {len(p)} 个交易日"})
+
+    def features(t: int) -> tuple[float, float]:
+        win = p[t - w:t + 1]
+        lo, hi = min(win), max(win)
+        return p[t] / p[t - w] - 1, (p[t] - lo) / ((hi - lo) or 1)
+
+    now = len(p) - 1
+    chg_now, pos_now = features(now)
+    candidates = range(w, now - h + 1)
+    tol = statistics.pstdev([features(t)[0] for t in candidates]) / 4
+    matches, t = [], w
+    while t <= now - h:
+        chg, pos = features(t)
+        if abs(chg - chg_now) <= tol and abs(pos - pos_now) <= 0.2:
+            matches.append((pts[t][0], round((p[t + h] / p[t] - 1) * 100, 2)))
+            t += h  # 跳过这一段，避免把同一次行情重复算好几次
+        else:
+            t += 1
+    fwd = [f for _, f in matches]
+    out = {"ok": True, "symbol": sym, "from": pts[0][0], "to": pts[-1][0], "lookback_days": w, "horizon_days": h,
+           "now_change_pct": round(chg_now * 100, 2), "now_position_in_range_pct": round(pos_now * 100),
+           "matches": len(matches)}
+    if fwd:
+        up = sum(f > 0 for f in fwd)
+        out |= {"up_count": up, "up_ratio_pct": round(up / len(fwd) * 100), "avg_forward_pct": round(statistics.mean(fwd), 2),
+                "median_forward_pct": round(statistics.median(fwd), 2), "worst_forward_pct": min(fwd),
+                "best_forward_pct": max(fwd), "recent_examples": [{"date": d, "forward_pct": f} for d, f in matches[-5:]]}
+    out["note"] = ("样本太少，结论不可靠。" if len(fwd) < 8 else "") + "过去的走势不代表未来。"
+    return dumps(out)

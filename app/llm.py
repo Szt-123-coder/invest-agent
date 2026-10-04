@@ -14,6 +14,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
+from .answer import ANSWER_TOOL
 from .config import get_settings
 from .symbols import find_in_text
 
@@ -55,13 +56,20 @@ class DemoModel(BaseChatModel):
             else:
                 break
         if tail:
-            return AIMessage(content=self._answer(list(reversed(tail))))
+            return self._submit(self._answer(list(reversed(tail))))
         question = next((m.content for m in reversed(messages) if isinstance(m, HumanMessage)), "")
         calls = self._plan(str(question))
         if not calls:
-            return AIMessage(content="（演示模式）我可以帮你查汇率和股价、看走势、读新闻、设提醒。试试问「澳元最近怎么样，要不要换」。")
+            return self._submit({"conclusion": "（演示模式）我可以帮你查汇率和股价、看走势、读新闻、设提醒。试试问「澳元最近怎么样，要不要换」。",
+                                 "confidence": "高", "confidence_reason": "这是功能介绍，不涉及数据"})
         return AIMessage(content="", tool_calls=[{"name": n, "args": a, "id": f"call_{i}", "type": "tool_call"}
                                                   for i, (n, a) in enumerate(calls)])
+
+    @staticmethod
+    def _submit(answer: dict) -> AIMessage:
+        """交卷：和真模型一样，通过调用 Answer 这个「工具」交出结构化回答。"""
+        return AIMessage(content="", tool_calls=[{"name": ANSWER_TOOL, "args": answer, "id": "call_answer",
+                                                  "type": "tool_call"}])
 
     @staticmethod
     def _plan(q: str) -> list[tuple[str, dict]]:
@@ -94,40 +102,67 @@ class DemoModel(BaseChatModel):
             calls.append(("get_quote", {"symbol": sym}))
             if re.search(r"最近|走势|怎么样|要不要|该不该|趋势|换", q):
                 calls.append(("get_history", {"symbol": sym, "days": 30}))
+            if re.search(r"要不要|该不该|会不会|历史上", q):
+                calls.append(("find_similar_history", {"symbol": sym}))
         if re.search(r"新闻|为什么|要不要|该不该|消息|原因", q):
             calls.append(("search_news", {"query": f"{syms[0]} 汇率 新闻" if "/" in syms[0] else f"{syms[0]} 新闻"}))
         return calls
 
     @staticmethod
-    def _answer(results: list[ToolMessage]) -> str:
-        lines, failed = [], []
+    def _answer(results: list[ToolMessage]) -> dict:
+        """把工具结果拼成 Answer 的各个字段。数字都直接取自工具结果，不做任何编造。"""
+        said, evidence, risks, actions = [], [], [], []
         for m in results:
             try:
                 data = json.loads(m.content)
             except (TypeError, ValueError):
                 data = {"ok": False, "error": str(m.content)}
-            if not data.get("ok"):
-                failed.append(data.get("error", "未知错误"))
+            name = m.name or ""
+            ok = bool(data.get("ok"))
+            if name in WRITE_TOOLS:
+                actions.append({"action": WRITE_TOOLS[name], "ok": ok, "detail": _write_detail(data)})
+                said.append(f"{WRITE_TOOLS[name]}{'成功' if ok else '没有做成'}。")
+                continue
+            if not ok:
+                risks.append(f"有一步没查到数据：{data.get('error', '未知错误')}")
                 continue
             if "price" in data:
-                lines.append(f"{data['symbol']} 最新 {data['price']}（{data['date']}，较前一日 {data['change_pct']:+}%）。")
+                said.append(f"{data['symbol']} 最新 {data['price']}。")
+                evidence += [{"label": "最新价", "value": str(data["price"]), "source": name},
+                             {"label": "较前一日", "value": f"{data['change_pct']:+}%", "source": name}]
             elif "high" in data:
-                lines.append(f"近 {data['days']} 天在 {data['low']} 到 {data['high']} 之间，区间涨跌 {data['change_pct']:+}%，"
-                             f"当前处在区间的 {data['position_in_range_pct']}% 位置。")
+                said.append(f"近 {data['days']} 个交易日处在区间的 {data['position_in_range_pct']}% 位置。")
+                evidence += [{"label": f"近 {data['days']} 天区间", "value": f"{data['low']} 到 {data['high']}", "source": name},
+                             {"label": f"近 {data['days']} 天涨跌", "value": f"{data['change_pct']:+}%", "source": name}]
+            elif "matches" in data:
+                if data["matches"]:
+                    evidence.append({"label": f"历史相似情形之后 {data['horizon_days']} 天上涨的比例",
+                                     "value": f"{data['up_count']}/{data['matches']}", "source": name})
+                    evidence.append({"label": "相似情形之后的平均涨跌", "value": f"{data['avg_forward_pct']:+}%", "source": name})
+                risks.append(f"历史相似情形只有 {data['matches']} 次，{data['note']}")
             elif "results" in data:
-                titles = "；".join(r["title"] for r in data["results"])
-                lines.append(f"相关新闻：{titles}。")
-            elif "alert_id" in data:
-                what = f"到 {data['target']}" if "target" in data else f"每变动 {data['step_pct']}%"
-                lines.append(f"已设置提醒 #{data['alert_id']}：{data['symbol']} {what}时通知你。")
+                said.append("相关新闻：" + "；".join(r["title"] for r in data["results"]) + "。")
+                risks.append("新闻只看了标题，可能遗漏重要背景")
             elif "alerts" in data:
-                lines.append(f"共有 {len(data['alerts'])} 个提醒，关注 {', '.join(data['watchlist']) or '无'}。")
-            elif "deleted" in data:
-                lines.append(f"已删除提醒 #{data['deleted']}。")
-            elif "watching" in data:
-                lines.append(f"已{'加入' if data['watching'] else '移出'}关注：{data['symbol']}。")
-            else:
-                lines.append("已记住。")
-        if failed:
-            lines.append("没有做成：" + "；".join(failed))
-        return "（演示模式，数据为示例）" + "".join(lines) + "\n\n仅供学习参考，不构成投资建议。"
+                said.append(f"共有 {len(data['alerts'])} 个提醒，关注 {', '.join(data['watchlist']) or '无'}。")
+        failed = any(not a["ok"] for a in actions) or any(r.startswith("有一步没查到") for r in risks)
+        return {"conclusion": "（演示模式，数据为示例）" + "".join(said), "evidence": evidence, "risks": risks,
+                "confidence": "低" if failed or not evidence else "中",
+                "confidence_reason": "演示模式按关键词规则拼出回答，不是真的分析", "actions": actions}
+
+
+WRITE_TOOLS = {"set_price_alert": "设置价位提醒", "set_move_alert": "设置波动提醒", "delete_alert": "删除提醒",
+               "watch": "修改关注", "remember_preference": "记住偏好"}
+
+
+def _write_detail(data: dict) -> str:
+    if not data.get("ok"):
+        return data.get("error", "未知错误")
+    if "alert_id" in data:
+        what = f"到 {data['target']}" if "target" in data else f"每变动 {data['step_pct']}%"
+        return f"提醒 #{data['alert_id']}：{data['symbol']} {what}时通知你"
+    if "deleted" in data:
+        return f"提醒 #{data['deleted']} 已删除"
+    if "watching" in data:
+        return f"{data['symbol']} 已{'加入' if data['watching'] else '移出'}关注"
+    return "已记住"

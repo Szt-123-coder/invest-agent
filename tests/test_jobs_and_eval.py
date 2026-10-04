@@ -56,3 +56,23 @@ def test_rule_check_any_of_accepts_either_reasonable_action():
     assert rule_check(case, listed) == (True, [])
     nothing = {"answer": "没有编号 999 的提醒", "steps": []}
     assert not rule_check(case, nothing)[0]
+
+
+def test_evidence_check_catches_made_up_numbers():
+    from evals.run_eval import evidence_check
+    outs = [{"name": "get_quote", "content": '{"ok": true, "price": 4.6529, "date": "2026-10-02", "change_pct": -0.29}'}]
+    good = {"evidence": [{"label": "最新价", "value": "4.65", "source": "get_quote"},       # 四舍五入算对
+                         {"label": "日期", "value": "2026-10-02", "source": "get_quote"},
+                         {"label": "涨跌", "value": "-0.29%", "source": "get_quote"}]}
+    assert evidence_check(good, outs) == []
+    made_up = {"evidence": [{"label": "最新价", "value": "4.71", "source": "get_quote"}]}
+    assert "4.71" in evidence_check(made_up, outs)[0]
+    wrong_tool = {"evidence": [{"label": "新闻条数", "value": "3", "source": "search_news"}]}
+    assert "没有调用过" in evidence_check(wrong_tool, outs)[0]
+
+
+def test_rule_check_catches_success_claimed_in_actions():
+    result = {"answer": "提醒好了", "structured": {"evidence": [], "actions": [{"action": "设提醒", "ok": True, "detail": ""}]},
+              "steps": [{"type": "tool_result", "name": "set_price_alert", "ok": False, "content": "{}"}]}
+    passed, problems = rule_check({}, result)
+    assert not passed and any("执行结果" in p for p in problems)

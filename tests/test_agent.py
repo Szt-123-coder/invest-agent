@@ -20,11 +20,13 @@ def test_symbols():
 
 def test_multi_step_question_calls_several_tools_and_saves_steps():
     r = ask("澳元最近怎么样，要不要换？")
-    assert tool_names(r) == ["get_quote", "get_history", "search_news"]
+    assert tool_names(r) == ["get_quote", "get_history", "find_similar_history", "search_news"]
     assert "AUD/CNY" in r["answer"] and "不构成投资建议" in r["answer"]
+    assert r["structured"]["confidence"] in ("高", "中", "低")
+    assert {e["source"] for e in r["structured"]["evidence"]} >= {"get_quote", "get_history", "find_similar_history"}
     with db.session() as s:
         run = s.get(db.Run, r["run_id"])
-        assert [st.kind for st in run.steps].count("tool_result") == 3
+        assert [st.kind for st in run.steps].count("tool_result") == 4
         assert run.answer == r["answer"]
 
 

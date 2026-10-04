@@ -28,6 +28,17 @@
   .ok { color:var(--good); } .fail { color:var(--bad); }
   .answer { background:var(--card); border:2px solid var(--accent); border-radius:12px; padding:14px 16px; margin-top:16px; white-space:pre-wrap; }
   .meta { color:var(--quiet); font-size:13px; margin-top:8px; }
+  .card { white-space:normal; }
+  .card .concl { font-size:16.5px; font-weight:600; margin:0 0 10px; }
+  .card h3 { font-size:13px; color:var(--quiet); font-weight:600; margin:14px 0 6px; letter-spacing:.02em; }
+  .card table { width:100%; border-collapse:collapse; font-size:14px; }
+  .card td { padding:5px 0; border-top:1px solid var(--line); vertical-align:top; }
+  .card td.v { font-variant-numeric:tabular-nums; font-weight:600; text-align:right; padding:5px 10px; white-space:nowrap; }
+  .card td.s { color:var(--quiet); font-size:12px; text-align:right; white-space:nowrap; }
+  .card ul { margin:0; padding-left:20px; }
+  .badge { display:inline-block; padding:1px 8px; border-radius:999px; font-size:13px; font-weight:600; border:1px solid currentColor; }
+  .c-高 { color:var(--good); } .c-中 { color:var(--accent); } .c-低 { color:var(--bad); }
+  .disc { color:var(--quiet); font-size:13px; margin-top:12px; }
   details { margin-top:32px; color:var(--quiet); font-size:14px; }
   details input { padding:6px 10px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--ink); }
   @keyframes in { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
@@ -59,7 +70,7 @@
   </details>
 </main>
 <script>
-const NAMES = { get_quote:'查最新价格', get_history:'查历史走势', search_news:'搜索新闻', set_price_alert:'设价位提醒',
+const NAMES = { get_quote:'查最新价格', get_history:'查历史走势', find_similar_history:'找历史相似情形', search_news:'搜索新闻', set_price_alert:'设价位提醒',
   set_move_alert:'设波动提醒', list_alerts:'查看提醒', delete_alert:'删除提醒', watch:'修改关注', remember_preference:'记住偏好' };
 const $ = id => document.getElementById(id);
 const session = (() => { try { return localStorage.sid || (localStorage.sid = crypto.randomUUID()); } catch { return 'web'; } })();
@@ -67,6 +78,26 @@ try { $('pw').value = localStorage.pw || ''; } catch {}
 $('pw').addEventListener('change', e => { try { localStorage.pw = e.target.value; } catch {} });
 document.querySelectorAll('.chip').forEach(c => c.onclick = () => { $('q').value = c.textContent; ask(); });
 $('f').onsubmit = e => { e.preventDefault(); ask(); };
+
+// 结构化回答显示成卡片：结论、依据（每个数字注明来自哪个工具）、风险、执行结果、信心
+function card(a) {
+  const box = el('div', 'answer card');
+  box.append(el('p', 'concl', a.conclusion));
+  if (a.evidence.length) {
+    const t = el('table');
+    a.evidence.forEach(x => { const tr = el('tr'); tr.append(el('td', null, x.label), el('td', 'v', x.value), el('td', 's', NAMES[x.source] || x.source)); t.append(tr); });
+    box.append(el('h3', null, '依据'), t);
+  }
+  if (a.risks.length) { const ul = el('ul'); a.risks.forEach(r => ul.append(el('li', null, r))); box.append(el('h3', null, '风险'), ul); }
+  if (a.actions.length) {
+    const ul = el('ul');
+    a.actions.forEach(x => ul.append(el('li', x.ok ? 'ok' : 'fail', `${x.ok ? '✓' : '✗ 没有做成'} ${x.action}：${x.detail}`)));
+    box.append(el('h3', null, '执行结果'), ul);
+  }
+  const conf = el('p'); conf.append(el('span', `badge c-${a.confidence}`, `信心 ${a.confidence}`), document.createTextNode(' ' + a.confidence_reason));
+  box.append(el('h3', null, '信心'), conf, el('p', 'disc', '仅供学习参考，不构成投资建议。'));
+  return box;
+}
 
 function el(tag, cls, text) { const x = document.createElement(tag); if (cls) x.className = cls; if (text != null) x.textContent = text; return x; }
 
@@ -101,7 +132,7 @@ async function ask() {
       const st = li.querySelector('.head .n:last-child'); st.textContent = e.ok ? '✓ 完成' : '✗ 失败'; st.className = e.ok ? 'ok' : 'fail';
       li.append(el('pre', null, e.content));
     } else if (e.type === 'answer') {
-      $('answer').replaceChildren(el('div', 'answer', e.content));
+      $('answer').replaceChildren(e.structured ? card(e.structured) : el('div', 'answer', e.content));
     } else if (e.type === 'done') {
       $('answer').append(el('div', 'meta', `共 ${n} 步，用时 ${(e.duration_ms / 1000).toFixed(1)} 秒 · 运行编号 ${e.run_id}`));
     } else if (e.type === 'start') {
