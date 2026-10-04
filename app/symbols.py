@@ -10,10 +10,34 @@ CURRENCIES = {
     "新加坡元": "SGD", "韩元": "KRW", "瑞士法郎": "CHF",
 }
 STOCKS = {
-    "茅台": "600519.SS", "贵州茅台": "600519.SS", "腾讯": "0700.HK", "阿里巴巴": "BABA", "阿里": "BABA",
-    "苹果": "AAPL", "英伟达": "NVDA", "特斯拉": "TSLA", "微软": "MSFT", "必和必拓": "BHP.AX",
+    # A 股
+    "茅台": "600519.SS", "贵州茅台": "600519.SS", "五粮液": "000858.SZ", "宁德时代": "300750.SZ", "比亚迪": "002594.SZ",
+    "中国平安": "601318.SS", "招商银行": "600036.SS", "工商银行": "601398.SS",
+    # 港股
+    "腾讯": "0700.HK", "小米": "1810.HK", "美团": "3690.HK", "中国移动": "0941.HK", "中芯国际": "0981.HK",
+    "泡泡玛特": "9992.HK", "联想": "0992.HK",
+    # 美股（含中概股）
+    "阿里巴巴": "BABA", "阿里": "BABA", "京东": "JD", "拼多多": "PDD", "百度": "BIDU", "网易": "NTES",
+    "苹果": "AAPL", "英伟达": "NVDA", "特斯拉": "TSLA", "微软": "MSFT", "谷歌": "GOOGL", "亚马逊": "AMZN",
+    "脸书": "META", "奈飞": "NFLX", "台积电": "TSM", "英特尔": "INTC", "可口可乐": "KO",
+    # 澳股
+    "必和必拓": "BHP.AX", "力拓": "RIO.AX", "联邦银行": "CBA.AX", "澳洲联邦银行": "CBA.AX",
 }
+# 常被问到、但没有上市的公司：直接告诉用户，不去行情接口白查一次
+UNLISTED = {"华为", "字节跳动", "字节", "抖音", "蚂蚁集团", "大疆", "顺丰集团"}
 CODES = set(CURRENCIES.values())
+
+
+class UnknownSymbol(ValueError):
+    """用户说的名字找不到对应的代码。message 直接给用户看。"""
+
+
+def check_known(symbol: str) -> None:
+    """名字认不出来时抛出看得懂的错误。规范的代码（字母、数字、. ^ / -）放行，交给行情接口判断。"""
+    if symbol in UNLISTED:
+        raise UnknownSymbol(f"{symbol}没有上市，所以没有股价")
+    if not re.fullmatch(r"[A-Z0-9.^/=-]+", symbol):
+        raise UnknownSymbol(f"不认识「{symbol}」。可以直接输入股票代码，比如 AAPL、600519.SS（上海）、000858.SZ（深圳）、0700.HK（香港）")
 
 
 def normalize(text: str) -> str:

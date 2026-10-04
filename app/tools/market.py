@@ -12,7 +12,7 @@ from langchain_core.tools import tool
 
 from ..config import get_settings
 from ..db import dumps
-from ..symbols import INDEXES, benchmark, normalize, yahoo_ticker
+from ..symbols import INDEXES, UnknownSymbol, benchmark, check_known, normalize, yahoo_ticker
 
 YAHOO = "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
 
@@ -37,11 +37,14 @@ def _fake_series(symbol: str, days: int) -> list[tuple[str, float]]:
 
 
 def fetch_series(symbol: str, days: int = 30) -> list[tuple[str, float]]:
+    check_known(symbol)
     if get_settings().demo_mode:
         return _fake_series(symbol, days)
     rng = next(r for n, r in ((31, "1mo"), (92, "3mo"), (366, "1y"), (731, "2y"), (10**9, "5y")) if days <= n)
     r = httpx.get(YAHOO.format(ticker=yahoo_ticker(symbol)), params={"range": rng, "interval": "1d"},
                   headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+    if r.status_code == 404:
+        raise UnknownSymbol(f"行情接口里没有 {symbol}：可能没有上市、已经退市，或者代码写错了")
     r.raise_for_status()
     res = r.json()["chart"]["result"][0]
     closes = res["indicators"]["quote"][0]["close"]

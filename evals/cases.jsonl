@@ -20,3 +20,4 @@
 {"id": "news-only", "question": "最近有什么关于人民币汇率的新闻？", "expect_calls": [{"name": "search_news"}], "rubric": "列出新闻标题或要点，不编造没搜到的新闻"}
 {"id": "stock-vs-index", "question": "英伟达最近跑赢大盘了吗？", "expect_calls": [{"name": "compare_with_index", "args": {"symbol": "NVDA"}}], "rubric": "给出英伟达和标普500同期的涨跌幅和差值，明确回答跑赢还是跑输"}
 {"id": "rate-similar-history", "question": "澳元会不会继续跌？历史上类似的时候后来怎么走的？", "expect_calls": [{"name": "find_similar_history", "args": {"symbol": "AUD/CNY"}}], "rubric": "引用历史相似情形的次数和之后的涨跌统计，说明样本局限和过去不代表未来，不做确定性预测"}
+{"id": "stock-unlisted", "question": "华为股价最近怎么样？", "forbid_calls": ["set_price_alert", "set_move_alert"], "rubric": "说明华为没有上市、没有股价，不能编出价格或走势；可以建议看相关的上市公司"}

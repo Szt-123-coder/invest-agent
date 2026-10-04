@@ -21,7 +21,7 @@ from .config import get_settings
 from .db import dumps
 from .jobs import start_background
 from .llm import DemoModel
-from .symbols import display_name
+from .symbols import UnknownSymbol, display_name
 from .tools.market import series_overview
 
 STATIC = Path(__file__).parent / "static"
@@ -83,8 +83,10 @@ def api_series(symbol: str, days: int = 22) -> dict:
         raise HTTPException(404, "请输入股票名或代码")
     try:
         data = series_overview(symbol, days)
-    except Exception as e:
-        raise HTTPException(404, f"查不到 {symbol} 的数据：{e}")
+    except UnknownSymbol as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:  # 网络等其他问题
+        raise HTTPException(502, f"暂时查不到 {symbol} 的数据：{e}")
     data["name"] = display_name(data["symbol"])
     return data
 

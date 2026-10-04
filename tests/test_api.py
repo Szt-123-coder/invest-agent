@@ -54,3 +54,12 @@ def test_series_api_returns_points_stats_and_index():
         assert c.get("/static/..%2Fmain.py").status_code == 404
     assert d["symbol"] == "600519.SS" and d["name"] == "茅台（600519.SS）" and d["index_name"] == "沪深300"
     assert len(d["points"]) == 22 and d["stats"]["low_52w"] <= d["stats"]["low"] <= d["stats"]["last"]
+
+
+def test_series_api_explains_unknown_and_unlisted_names():
+    with TestClient(app) as c:
+        r = c.get("/api/series", params={"symbol": "华为"})
+        assert r.status_code == 404 and "没有上市" in r.json()["detail"]
+        r = c.get("/api/series", params={"symbol": "随便写的"})
+        assert r.status_code == 404 and "600519.SS" in r.json()["detail"]
+        assert c.get("/api/series", params={"symbol": "比亚迪"}).json()["symbol"] == "002594.SZ"
