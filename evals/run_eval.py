@@ -66,15 +66,17 @@ NUMBER = re.compile(r"[-+]?\d+(?:\.(\d+))?")
 
 
 def _tool_numbers(value) -> list[float]:
-    """把工具返回的 JSON 里所有数字都找出来（包括嵌套的列表和字典）。"""
+    """把工具返回的 JSON 里所有数字都找出来：数值字段、文字里的数字（比如新闻正文）、列表的长度（比如提醒有 0 个）。"""
     if isinstance(value, bool):
         return []
     if isinstance(value, (int, float)):
         return [float(value)]
+    if isinstance(value, str):
+        return [float(m.group()) for m in NUMBER.finditer(DATE.sub("", value))]
     if isinstance(value, dict):
         return [n for v in value.values() for n in _tool_numbers(v)]
     if isinstance(value, list):
-        return [n for v in value for n in _tool_numbers(v)]
+        return [float(len(value))] + [n for v in value for n in _tool_numbers(v)]
     return []
 
 

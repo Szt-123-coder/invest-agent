@@ -36,7 +36,7 @@ class Answer(BaseModel):
     risks: list[str] = Field(default_factory=list, description="结论可能出错的情况，没有就留空")
     confidence: Literal["高", "中", "低"] = Field(description="对结论有多大把握")
     confidence_reason: str = Field(description="一句话说明为什么是这个把握")
-    actions: list[ActionResult] = Field(default_factory=list, description="设提醒、改关注等修改操作的结果，没有就留空")
+    actions: list[ActionResult] = Field(default_factory=list, description="只填修改类操作的结果：设提醒、删提醒、改关注、记偏好。查价格、查提醒列表这类查询不要填")
 
 
 ANSWER_TOOL = Answer.__name__

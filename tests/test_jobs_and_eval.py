@@ -76,3 +76,14 @@ def test_rule_check_catches_success_claimed_in_actions():
               "steps": [{"type": "tool_result", "name": "set_price_alert", "ok": False, "content": "{}"}]}
     passed, problems = rule_check({}, result)
     assert not passed and any("执行结果" in p for p in problems)
+
+
+def test_evidence_check_reads_numbers_inside_text_and_list_lengths():
+    from evals.run_eval import evidence_check
+    outs = [{"name": "search_news", "content": '{"ok": true, "results": [{"title": "9月30日人民币中间价报 6.7351，年内升值 4%"}]}'},
+            {"name": "list_alerts", "content": '{"ok": true, "alerts": [], "watchlist": []}'}]
+    ev = {"evidence": [{"label": "中间价", "value": "6.7351", "source": "search_news"},
+                       {"label": "年内升值", "value": "4%", "source": "search_news"},
+                       {"label": "提醒数量", "value": "0", "source": "list_alerts"}]}
+    assert evidence_check(ev, outs) == []
+    assert evidence_check({"evidence": [{"label": "x", "value": "6.80", "source": "search_news"}]}, outs)
