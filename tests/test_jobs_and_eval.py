@@ -48,3 +48,11 @@ def test_rule_check_matches_symbol_names_and_numbers():
         {"type": "tool_call", "name": "set_price_alert", "args": {"symbol": "澳元", "target": "4.80"}},
         {"type": "tool_result", "name": "set_price_alert", "ok": True, "content": "{}"}]}
     assert rule_check(case, result) == (True, [])
+
+
+def test_rule_check_any_of_accepts_either_reasonable_action():
+    case = {"expect_calls": [{"any_of": [{"name": "delete_alert", "args": {"alert_id": 999}}, {"name": "list_alerts"}]}]}
+    listed = {"answer": "没有编号 999 的提醒", "steps": [{"type": "tool_call", "name": "list_alerts", "args": {}}]}
+    assert rule_check(case, listed) == (True, [])
+    nothing = {"answer": "没有编号 999 的提醒", "steps": []}
+    assert not rule_check(case, nothing)[0]

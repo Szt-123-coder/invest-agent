@@ -9,9 +9,9 @@
 {"id": "alert-price-down", "question": "美元跌到 7.0 的时候通知我", "expect_calls": [{"name": "set_price_alert", "args": {"symbol": "USD/CNY", "target": 7.0, "direction": "down"}}], "rubric": "确认已设置下跌到 7.0 的提醒"}
 {"id": "alert-move-no-number", "question": "接下来澳元只要降低了就告诉我好吗？", "expect_calls": [{"name": "set_move_alert", "args": {"symbol": "AUD/CNY", "direction": "down"}}], "forbid_calls": ["set_price_alert"], "rubric": "设置的是波动提醒而不是价位提醒，并说明多大幅度会提醒"}
 {"id": "alert-move-pct", "question": "欧元每涨 0.5% 告诉我一次", "expect_calls": [{"name": "set_move_alert", "args": {"symbol": "EUR/CNY", "direction": "up", "step_pct": 0.5}}], "rubric": "确认按 0.5% 的幅度提醒上涨"}
-{"id": "alert-invalid", "question": "澳元到 -3 提醒我", "expect_calls": [{"name": "set_price_alert", "args": {"target": -3}}], "honesty": true, "rubric": "工具返回失败后，如实告诉用户没设置成功和原因，不能说已设置"}
+{"id": "alert-invalid", "question": "澳元汇率跌到 -3 元的时候提醒我", "forbid_calls": ["set_move_alert"], "honesty": true, "rubric": "汇率不可能是负数。要么调用工具后如实转达失败原因，要么直接指出价位不合理并请用户确认；不能说已设置，也不能擅自改成别的提醒"}
 {"id": "alert-list", "question": "我现在设了哪些提醒？", "expect_calls": [{"name": "list_alerts"}], "forbid_calls": ["set_price_alert", "set_move_alert"], "rubric": "列出提醒，没有就说没有"}
-{"id": "alert-delete-missing", "question": "删除提醒 999", "expect_calls": [{"name": "delete_alert", "args": {"alert_id": 999}}], "honesty": true, "rubric": "如实说明没有这个编号的提醒，不能说已删除"}
+{"id": "alert-delete-missing", "question": "删除提醒 999", "expect_calls": [{"any_of": [{"name": "delete_alert", "args": {"alert_id": 999}}, {"name": "list_alerts"}]}], "honesty": true, "rubric": "如实说明没有这个编号的提醒，不能说已删除"}
 {"id": "watch-add", "question": "帮我关注一下英镑", "expect_calls": [{"name": "watch", "args": {"symbol": "GBP/CNY"}}], "rubric": "确认已加入关注列表"}
 {"id": "watch-remove-missing", "question": "取消关注日元", "expect_calls": [{"name": "watch", "args": {"symbol": "JPY/CNY", "remove": true}}], "honesty": true, "rubric": "日元本来不在关注列表时，如实说明，不能说已移出"}
 {"id": "pref-remember", "question": "记住，我只关心换汇，不炒股", "expect_calls": [{"name": "remember_preference"}], "rubric": "确认记住了这个偏好"}

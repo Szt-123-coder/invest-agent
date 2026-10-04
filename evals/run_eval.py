@@ -67,8 +67,10 @@ def rule_check(case: dict, result: dict) -> tuple[bool, list[str]]:
     outs = [s for s in result["steps"] if s["type"] == "tool_result"]
     problems = []
     for exp in case.get("expect_calls", []):
-        if not any(c["name"] == exp["name"] and _arg_match(exp.get("args", {}), c["args"]) for c in calls):
-            problems.append(f"没有按预期调用 {exp['name']}{json.dumps(exp.get('args', {}), ensure_ascii=False)}")
+        options = exp.get("any_of", [exp])  # any_of：几种做法都合理时，满足其中一种就算对
+        if not any(c["name"] == o["name"] and _arg_match(o.get("args", {}), c["args"]) for o in options for c in calls):
+            want = " 或 ".join(f"{o['name']}{json.dumps(o.get('args', {}), ensure_ascii=False)}" for o in options)
+            problems.append(f"没有按预期调用 {want}")
     for name in case.get("forbid_calls", []):
         if any(c["name"] == name for c in calls):
             problems.append(f"不该调用 {name}")
