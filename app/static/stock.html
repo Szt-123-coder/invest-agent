@@ -59,6 +59,7 @@
         <button type="button" data-days="22" aria-pressed="true">1 个月</button><button type="button" data-days="66">3 个月</button><button type="button" data-days="365">1 年</button>
       </span>
     </div>
+    <p class="meta" id="how"></p>
     <div class="tiles" id="tiles"></div>
     <div class="bar">
       <span class="seg" id="mode">
@@ -104,13 +105,17 @@ const pct = v => (v > 0 ? '+' : '') + fmt(v) + '%';
 async function load() {
   const q = $('q').value.trim(); if (!q) return;
   $('err').textContent = '';
-  const res = await fetch(`/api/series?symbol=${encodeURIComponent(q)}&days=${days}`);
+  const headers = {}; try { if (localStorage.pw) headers.Authorization = 'Bearer ' + localStorage.pw; } catch {}
+  const res = await fetch(`/api/series?symbol=${encodeURIComponent(q)}&days=${days}`, { headers });
   if (!res.ok) { $('err').textContent = (await res.json()).detail || '查不到数据'; $('view').hidden = true; return; }
   data = await res.json();
   if (data.symbol !== symbol) { $('steps').innerHTML = ''; $('answer').innerHTML = ''; }
   symbol = data.symbol;
   $('view').hidden = false;
   $('name').textContent = data.name;
+  // 说明代码是怎么来的：内置名单不提示；模型识别、缓存都告诉用户，方便发现识别错了
+  $('how').textContent = data.resolved_by === '模型' ? `「${q}」由模型识别为 ${data.symbol}，已用行情数据核实。${data.resolve_note || ''}`
+    : data.resolved_by === '缓存' ? `「${q}」之前由模型识别为 ${data.symbol}。` : '';
   const st = data.stats;
   $('tiles').replaceChildren(
     tile('最新价', fmt(st.last), st.date),

@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 from .. import db
 from ..db import dumps
-from ..symbols import normalize
+from ..resolve import to_code
 
 
 def _fail(msg: str) -> str:
@@ -21,7 +21,7 @@ def _fail(msg: str) -> str:
 @tool
 def set_price_alert(symbol: str, target: float, direction: str = "auto") -> str:
     """设一个价位提醒：价格到达 target 时通知。direction 是 up（涨到）、down（跌到）或 auto（按当前价自动判断）。"""
-    sym = normalize(symbol)
+    sym = to_code(symbol)
     if direction not in ("up", "down", "auto"):
         return _fail("direction 只能是 up、down 或 auto")
     try:
@@ -41,7 +41,7 @@ def set_price_alert(symbol: str, target: float, direction: str = "auto") -> str:
 def set_move_alert(symbol: str, direction: str = "down", step_pct: float = 0.2) -> str:
     """设一个波动提醒：从最近高点每跌（或从低点每涨）step_pct 百分比就通知一次。
     用户说「跌了就告诉我」这类没有具体价位的话时用它。direction 是 up、down 或 both。"""
-    sym = normalize(symbol)
+    sym = to_code(symbol)
     if direction not in ("up", "down", "both"):
         return _fail("direction 只能是 up、down 或 both")
     try:
@@ -84,7 +84,7 @@ def delete_alert(alert_id: int) -> str:
 @tool
 def watch(symbol: str, remove: bool = False) -> str:
     """把一个标的加入（remove=false）或移出（remove=true）关注列表。关注的标的会出现在每日总结里。"""
-    sym = normalize(symbol)
+    sym = to_code(symbol)
     with db.session() as s:
         item = s.scalar(select(db.WatchItem).where(db.WatchItem.symbol == sym))
         if remove:

@@ -52,6 +52,16 @@ class Preference(Base):
     value: Mapped[str] = mapped_column(Text)
 
 
+class SymbolAlias(Base):
+    """模型识别过的名字 → 代码，比如「三星」→ 005930.KS。核实过才存，下次直接用，不再花钱问模型。"""
+    __tablename__ = "symbol_aliases"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    alias: Mapped[str] = mapped_column(String(64), unique=True)
+    symbol: Mapped[str] = mapped_column(String(32))
+    name: Mapped[str] = mapped_column(String(128), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 # ---------- 短期记忆：这次对话说过什么 ----------
 
 class ChatMessage(Base):

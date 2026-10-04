@@ -12,7 +12,8 @@ from langchain_core.tools import tool
 
 from ..config import get_settings
 from ..db import dumps
-from ..symbols import INDEXES, UnknownSymbol, benchmark, check_known, normalize, yahoo_ticker
+from ..resolve import to_code
+from ..symbols import INDEXES, UnknownSymbol, benchmark, check_known, yahoo_ticker
 
 YAHOO = "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
 
@@ -54,8 +55,9 @@ def fetch_series(symbol: str, days: int = 30) -> list[tuple[str, float]]:
 
 @tool
 def get_quote(symbol: str) -> str:
-    """查一个标的的最新价格。symbol 可以是货币对（AUD/CNY）、股票代码（AAPL、600519.SS）或中文名（澳元、茅台）。"""
-    sym = normalize(symbol)
+    """查一个标的的最新价格。symbol 可以是货币对（AUD/CNY）、Yahoo 股票代码（AAPL、600519.SS、005930.KS）或常见中文名（澳元、茅台）。
+    名字查不到时，如果你知道它的 Yahoo 代码，就用代码再查一次。"""
+    sym = to_code(symbol)
     try:
         pts = fetch_series(sym, 5)
     except Exception as e:  # 网络或代码错误都如实告诉模型
@@ -71,7 +73,7 @@ def get_quote(symbol: str) -> str:
 @tool
 def get_history(symbol: str, days: int = 30) -> str:
     """查一个标的最近 days 天（默认 30，最多 365）的走势统计：最高、最低、平均、区间涨跌和波动。"""
-    sym = normalize(symbol)
+    sym = to_code(symbol)
     days = max(5, min(int(days), 365))
     try:
         pts = fetch_series(sym, days)
@@ -99,7 +101,7 @@ def find_similar_history(symbol: str, lookback_days: int = 30, horizon_days: int
     而且当前价在这段区间里的位置接近（相差不超过 20 个百分点）。
     适合回答「要不要换」「会不会继续跌」这类问题时，用历史数据当依据。样本少时结论不可靠。
     """
-    sym = normalize(symbol)
+    sym = to_code(symbol)
     w = max(5, min(int(lookback_days), 120))
     h = max(5, min(int(horizon_days), 120))
     years = max(1, min(int(years), 5))
@@ -148,7 +150,7 @@ def compare_with_index(symbol: str, days: int = 30) -> str:
     A 股比沪深300，港股比恒生指数，澳股比 ASX 200，韩股比 KOSPI，日股比日经225，其他比标普500。
     返回两者的涨跌幅、超额收益（股票减大盘），以及每日涨跌的相关系数（越接近 1 越是跟着大盘走）。
     """
-    sym = normalize(symbol)
+    sym = to_code(symbol)
     idx = benchmark(sym)
     if not idx:
         return dumps({"ok": False, "error": f"{sym} 不是股票，没有对应的大盘指数"})
@@ -175,7 +177,7 @@ def compare_with_index(symbol: str, days: int = 30) -> str:
 
 def series_overview(symbol: str, days: int = 30) -> dict:
     """股票页面用：一段走势的价格点和关键数字，另附大盘走势（用来画对比线）。不经过模型。"""
-    sym = normalize(symbol)
+    sym = to_code(symbol)
     days = max(5, min(int(days), 365))
     year = fetch_series(sym, 365)
     if len(year) < 2:

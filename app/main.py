@@ -21,8 +21,9 @@ from .config import get_settings
 from .db import dumps
 from .jobs import start_background
 from .llm import DemoModel
+from .resolve import llm_asker, resolve
 from .symbols import UnknownSymbol, display_name
-from .tools.market import series_overview
+from .tools.market import fetch_series, series_overview
 
 STATIC = Path(__file__).parent / "static"
 
@@ -77,17 +78,27 @@ def static_file(name: str) -> FileResponse:
 
 
 @app.get("/api/series")
-def api_series(symbol: str, days: int = 22) -> dict:
-    """股票页面画图用：价格点、关键数字和大盘走势。直接查数据，不经过模型，所以不花钱。"""
+def api_series(symbol: str, days: int = 22, authorization: str | None = Header(default=None)) -> dict:
+    """股票页面画图用：价格点、关键数字和大盘走势。
+
+    名字先查内置名单和缓存；都没有时，有密码的请求会让模型识别代码，并用行情接口核实（访客不调用模型，不花钱）。
+    """
     if not symbol.strip():
         raise HTTPException(404, "请输入股票名或代码")
+    ask = llm_asker() if _authorized(authorization) else None
     try:
-        data = series_overview(symbol, days)
+        r = resolve(symbol, ask=ask, verify=lambda code: fetch_series(code, 5))
+        data = series_overview(r.symbol, days)
     except UnknownSymbol as e:
-        raise HTTPException(404, str(e))
+        no_model_for_visitor = ask is None and not get_settings().demo_mode
+        hint = "（在问答页填了访问密码后，可以让模型识别名单外的名字）" if no_model_for_visitor else ""
+        raise HTTPException(404, str(e) + hint)
     except Exception as e:  # 网络等其他问题
         raise HTTPException(502, f"暂时查不到 {symbol} 的数据：{e}")
-    data["name"] = display_name(data["symbol"])
+    known = display_name(r.symbol)
+    data["name"] = f"{r.name}（{r.symbol}）" if known == r.symbol and r.name else known
+    data["resolved_by"] = r.source
+    data["resolve_note"] = r.note
     return data
 
 
