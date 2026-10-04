@@ -4,51 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>投资学习 Agent</title>
-<style>
-  :root { --bg:#f7f7f5; --card:#fff; --ink:#1d1d1b; --quiet:#6b6b66; --line:#e3e2dd; --accent:#2563eb; --good:#15803d; --bad:#b91c1c; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#161615; --card:#1f1f1d; --ink:#ededea; --quiet:#a3a39d; --line:#33332f; --accent:#6ea0ff; --good:#4ade80; --bad:#f87171; } }
-  * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
-  main { max-width:760px; margin:0 auto; padding:24px 16px 64px; }
-  header { display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap; }
-  h1 { font-size:22px; margin:0; }
-  a { color:var(--accent); }
-  .sub { color:var(--quiet); margin:4px 0 20px; }
-  form { display:flex; gap:8px; }
-  input[type=text] { flex:1; min-width:0; padding:12px 14px; font-size:16px; border:1px solid var(--line); border-radius:10px; background:var(--card); color:var(--ink); }
-  button { padding:0 18px; font-size:15px; border:0; border-radius:10px; background:var(--accent); color:#fff; cursor:pointer; }
-  button:disabled { opacity:.5; cursor:default; }
-  .chips { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0 24px; }
-  .chip { padding:6px 12px; border:1px solid var(--line); border-radius:999px; background:var(--card); color:var(--ink); cursor:pointer; font-size:14px; }
-  .steps { list-style:none; padding:0; margin:0; }
-  .step { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 14px; margin-bottom:8px; animation: in .25s ease; }
-  .step .head { display:flex; gap:8px; align-items:center; font-weight:600; }
-  .step .n { color:var(--quiet); font-weight:400; font-size:13px; }
-  .step pre { margin:6px 0 0; white-space:pre-wrap; word-break:break-all; font-size:12.5px; color:var(--quiet); max-height:160px; overflow:auto; }
-  .ok { color:var(--good); } .fail { color:var(--bad); }
-  .answer { background:var(--card); border:2px solid var(--accent); border-radius:12px; padding:14px 16px; margin-top:16px; white-space:pre-wrap; }
-  .meta { color:var(--quiet); font-size:13px; margin-top:8px; }
-  .card { white-space:normal; }
-  .card .concl { font-size:16.5px; font-weight:600; margin:0 0 10px; }
-  .card h3 { font-size:13px; color:var(--quiet); font-weight:600; margin:14px 0 6px; letter-spacing:.02em; }
-  .card table { width:100%; border-collapse:collapse; font-size:14px; }
-  .card td { padding:5px 0; border-top:1px solid var(--line); vertical-align:top; }
-  .card td.v { font-variant-numeric:tabular-nums; font-weight:600; text-align:right; padding:5px 10px; white-space:nowrap; }
-  .card td.s { color:var(--quiet); font-size:12px; text-align:right; white-space:nowrap; }
-  .card ul { margin:0; padding-left:20px; }
-  .badge { display:inline-block; padding:1px 8px; border-radius:999px; font-size:13px; font-weight:600; border:1px solid currentColor; }
-  .c-高 { color:var(--good); } .c-中 { color:var(--accent); } .c-低 { color:var(--bad); }
-  .disc { color:var(--quiet); font-size:13px; margin-top:12px; }
-  details { margin-top:32px; color:var(--quiet); font-size:14px; }
-  details input { padding:6px 10px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--ink); }
-  @keyframes in { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
-</style>
+<link rel="stylesheet" href="/static/common.css">
 </head>
 <body>
 <main>
   <header>
     <h1>投资学习 Agent</h1>
-    <a href="/eval">评测面板 →</a>
+    <nav><a href="/stock">股票页面</a> · <a href="/eval">评测面板 →</a></nav>
   </header>
   <p class="sub">问一句话，看它一步步查数据、读新闻，再给出有依据的回答。仅供学习，不构成投资建议。</p>
   <form id="f">
@@ -69,9 +31,8 @@
     <p><input id="pw" type="password" placeholder="ACCESS_PASSWORD"> 保存在本浏览器</p>
   </details>
 </main>
+<script src="/static/common.js"></script>
 <script>
-const NAMES = { get_quote:'查最新价格', get_history:'查历史走势', find_similar_history:'找历史相似情形', search_news:'搜索新闻', set_price_alert:'设价位提醒',
-  set_move_alert:'设波动提醒', list_alerts:'查看提醒', delete_alert:'删除提醒', watch:'修改关注', remember_preference:'记住偏好' };
 const $ = id => document.getElementById(id);
 const session = (() => { try { return localStorage.sid || (localStorage.sid = crypto.randomUUID()); } catch { return 'web'; } })();
 try { $('pw').value = localStorage.pw || ''; } catch {}
@@ -79,46 +40,12 @@ $('pw').addEventListener('change', e => { try { localStorage.pw = e.target.value
 document.querySelectorAll('.chip').forEach(c => c.onclick = () => { $('q').value = c.textContent; ask(); });
 $('f').onsubmit = e => { e.preventDefault(); ask(); };
 
-// 结构化回答显示成卡片：结论、依据（每个数字注明来自哪个工具）、风险、执行结果、信心
-function card(a) {
-  const box = el('div', 'answer card');
-  box.append(el('p', 'concl', a.conclusion));
-  if (a.evidence.length) {
-    const t = el('table');
-    a.evidence.forEach(x => { const tr = el('tr'); tr.append(el('td', null, x.label), el('td', 'v', x.value), el('td', 's', NAMES[x.source] || x.source)); t.append(tr); });
-    box.append(el('h3', null, '依据'), t);
-  }
-  if (a.risks.length) { const ul = el('ul'); a.risks.forEach(r => ul.append(el('li', null, r))); box.append(el('h3', null, '风险'), ul); }
-  if (a.actions.length) {
-    const ul = el('ul');
-    a.actions.forEach(x => ul.append(el('li', x.ok ? 'ok' : 'fail', `${x.ok ? '✓' : '✗ 没有做成'} ${x.action}：${x.detail}`)));
-    box.append(el('h3', null, '执行结果'), ul);
-  }
-  const conf = el('p'); conf.append(el('span', `badge c-${a.confidence}`, `信心 ${a.confidence}`), document.createTextNode(' ' + a.confidence_reason));
-  box.append(el('h3', null, '信心'), conf, el('p', 'disc', '仅供学习参考，不构成投资建议。'));
-  return box;
-}
-
-function el(tag, cls, text) { const x = document.createElement(tag); if (cls) x.className = cls; if (text != null) x.textContent = text; return x; }
 
 async function ask() {
   const question = $('q').value.trim(); if (!question) return;
   $('go').disabled = true; $('steps').innerHTML = ''; $('answer').innerHTML = '';
   const calls = {}; let n = 0;
-  const headers = { 'Content-Type': 'application/json' };
-  if ($('pw').value) headers.Authorization = 'Bearer ' + $('pw').value;
-  try {
-    const res = await fetch('/api/ask', { method:'POST', headers, body: JSON.stringify({ question, session_id: session }) });
-    const reader = res.body.getReader(), dec = new TextDecoder(); let buf = '';
-    for (;;) {
-      const { value, done } = await reader.read(); if (done) break;
-      buf += dec.decode(value, { stream:true });
-      let i; while ((i = buf.indexOf('\n\n')) >= 0) {
-        const line = buf.slice(0, i); buf = buf.slice(i + 2);
-        if (line.startsWith('data: ')) show(JSON.parse(line.slice(6)));
-      }
-    }
-  } catch (err) { show({ type:'error', message: String(err) }); }
+  await streamAsk(question, session, show);
   $('go').disabled = false;
 
   function show(e) {

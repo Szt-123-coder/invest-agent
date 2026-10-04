@@ -100,10 +100,12 @@ class DemoModel(BaseChatModel):
         calls: list[tuple[str, dict]] = []
         for sym in syms[:2]:
             calls.append(("get_quote", {"symbol": sym}))
-            if re.search(r"最近|走势|怎么样|要不要|该不该|趋势|换", q):
+            if re.search(r"最近|走势|怎么样|要不要|该不该|趋势|换|分析", q):
                 calls.append(("get_history", {"symbol": sym, "days": 30}))
             if re.search(r"要不要|该不该|会不会|历史上", q):
                 calls.append(("find_similar_history", {"symbol": sym}))
+            if "/" not in sym and re.search(r"大盘|指数|跑赢|跑输|分析", q):
+                calls.append(("compare_with_index", {"symbol": sym, "days": 30}))
         if re.search(r"新闻|为什么|要不要|该不该|消息|原因", q):
             calls.append(("search_news", {"query": f"{syms[0]} 汇率 新闻" if "/" in syms[0] else f"{syms[0]} 新闻"}))
         return calls
@@ -134,6 +136,13 @@ class DemoModel(BaseChatModel):
                 said.append(f"近 {data['days']} 个交易日处在区间的 {data['position_in_range_pct']}% 位置。")
                 evidence += [{"label": f"近 {data['days']} 天区间", "value": f"{data['low']} 到 {data['high']}", "source": name},
                              {"label": f"近 {data['days']} 天涨跌", "value": f"{data['change_pct']:+}%", "source": name}]
+            elif "excess_pct" in data:
+                said.append(f"同期{data['index_name']} {data['index_change_pct']:+}%，"
+                            f"{'跑赢' if data['excess_pct'] >= 0 else '跑输'}大盘 {abs(data['excess_pct'])} 个百分点。")
+                evidence += [{"label": f"同期{data['index_name']}涨跌", "value": f"{data['index_change_pct']:+}%", "source": name},
+                             {"label": "超额收益", "value": f"{data['excess_pct']:+}%", "source": name}]
+                if data["daily_correlation"] is not None and data["daily_correlation"] > 0.7:
+                    risks.append(f"和大盘的每日相关系数是 {data['daily_correlation']}，大盘下跌时它很可能跟着跌")
             elif "matches" in data:
                 if data["matches"]:
                     evidence.append({"label": f"历史相似情形之后 {data['horizon_days']} 天上涨的比例",

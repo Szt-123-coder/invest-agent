@@ -12,7 +12,7 @@ from langchain_core.tools import tool
 
 from ..config import get_settings
 from ..db import dumps
-from ..symbols import normalize, yahoo_ticker
+from ..symbols import INDEXES, benchmark, normalize, yahoo_ticker
 
 YAHOO = "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
 
@@ -23,12 +23,15 @@ def _fake_series(symbol: str, days: int) -> list[tuple[str, float]]:
     第 k 天前的价格只和 k 有关，所以查 30 天和查 3 年看到的是同一条走势的不同长度。
     """
     seed = int(hashlib.md5(symbol.encode()).hexdigest()[:8], 16)
-    base = {"AUD/CNY": 4.62, "USD/CNY": 7.12, "EUR/CNY": 7.75}.get(symbol, 50 + seed % 300)
+    base = {"AUD/CNY": 4.62, "USD/CNY": 7.12, "EUR/CNY": 7.75, "^GSPC": 5800, "000300.SS": 3900, "^HSI": 21000,
+            "^AXJO": 8200}.get(symbol, 50 + seed % 300)
     today = date(2026, 10, 2)
     out = []
     for k in range(days - 1, -1, -1):
         i = 364 - k
         wave = math.sin((i + seed % 7) / 4) * 0.012 + math.sin(i / 37) * 0.01 + (i - 365) * 0.00004
+        if "/" not in symbol:  # 股票和指数波动比汇率大
+            wave = wave * 4 + math.sin((i + seed % 11) / 9) * 0.03
         out.append(((today - timedelta(days=k)).isoformat(), round(base * (1 + wave), 4)))
     return out
 
@@ -133,3 +136,59 @@ def find_similar_history(symbol: str, lookback_days: int = 30, horizon_days: int
                 "best_forward_pct": max(fwd), "recent_examples": [{"date": d, "forward_pct": f} for d, f in matches[-5:]]}
     out["note"] = ("样本太少，结论不可靠。" if len(fwd) < 8 else "") + "过去的走势不代表未来。"
     return dumps(out)
+
+
+@tool
+def compare_with_index(symbol: str, days: int = 30) -> str:
+    """把一只股票最近 days 天（默认 30）的涨跌和它所在市场的大盘指数比较。
+
+    A 股比沪深300，港股比恒生指数，澳股比 ASX 200，其他比标普500。
+    返回两者的涨跌幅、超额收益（股票减大盘），以及每日涨跌的相关系数（越接近 1 越是跟着大盘走）。
+    """
+    sym = normalize(symbol)
+    idx = benchmark(sym)
+    if not idx:
+        return dumps({"ok": False, "error": f"{sym} 不是股票，没有对应的大盘指数"})
+    days = max(5, min(int(days), 365))
+    try:
+        a, b = dict(fetch_series(sym, days)), dict(fetch_series(idx, days))
+    except Exception as e:
+        return dumps({"ok": False, "error": f"查不到 {sym} 或大盘的数据：{e}"})
+    dates = sorted(set(a) & set(b))  # 两个市场休市日不同，只比较都开盘的日子
+    if len(dates) < 5:
+        return dumps({"ok": False, "error": f"{sym} 和大盘共同的交易日太少"})
+    pa, pb = [a[d] for d in dates], [b[d] for d in dates]
+    ra = [y / x - 1 for x, y in zip(pa, pa[1:])]
+    rb = [y / x - 1 for x, y in zip(pb, pb[1:])]
+    sa, sb = (pa[-1] / pa[0] - 1) * 100, (pb[-1] / pb[0] - 1) * 100
+    try:
+        corr = round(statistics.correlation(ra, rb), 2)
+    except statistics.StatisticsError:
+        corr = None
+    return dumps({"ok": True, "symbol": sym, "index": idx, "index_name": INDEXES[idx], "from": dates[0], "to": dates[-1],
+                  "days": len(dates), "stock_change_pct": round(sa, 2), "index_change_pct": round(sb, 2),
+                  "excess_pct": round(sa - sb, 2), "daily_correlation": corr})
+
+
+def series_overview(symbol: str, days: int = 30) -> dict:
+    """股票页面用：一段走势的价格点和关键数字，另附大盘走势（用来画对比线）。不经过模型。"""
+    sym = normalize(symbol)
+    days = max(5, min(int(days), 365))
+    year = fetch_series(sym, 365)
+    if len(year) < 2:
+        raise ValueError(f"{sym} 没有数据")
+    pts = year[-days:]
+    prices = [p for _, p in pts]
+    rets = [y / x - 1 for x, y in zip(prices, prices[1:])]
+    out = {"symbol": sym, "days": len(pts), "points": pts,
+           "stats": {"last": prices[-1], "date": pts[-1][0], "change_pct": round((prices[-1] / prices[0] - 1) * 100, 2),
+                     "high": max(prices), "low": min(prices),
+                     "high_52w": max(p for _, p in year), "low_52w": min(p for _, p in year),
+                     "daily_volatility_pct": round(statistics.pstdev(rets) * 100, 3)}}
+    idx = benchmark(sym)
+    if idx:
+        try:
+            out |= {"index": idx, "index_name": INDEXES[idx], "index_points": fetch_series(idx, days)}
+        except Exception:  # 大盘查不到不影响股票本身的展示
+            pass
+    return out

@@ -44,3 +44,13 @@ def test_pages_load():
     with TestClient(app) as c:
         assert "投资学习 Agent" in c.get("/").text
         assert "评测面板" in c.get("/eval").text
+
+
+def test_series_api_returns_points_stats_and_index():
+    with TestClient(app) as c:
+        d = c.get("/api/series", params={"symbol": "茅台", "days": 22}).json()
+        assert c.get("/api/series", params={"symbol": "", "days": 22}).status_code == 404
+        assert "股票走势" in c.get("/stock").text and c.get("/static/common.js").status_code == 200
+        assert c.get("/static/..%2Fmain.py").status_code == 404
+    assert d["symbol"] == "600519.SS" and d["name"] == "茅台（600519.SS）" and d["index_name"] == "沪深300"
+    assert len(d["points"]) == 22 and d["stats"]["low_52w"] <= d["stats"]["low"] <= d["stats"]["last"]

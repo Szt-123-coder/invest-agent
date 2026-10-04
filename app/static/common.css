@@ -1,0 +1,38 @@
+/* 首页和股票页共用的样式 */
+  :root { --bg:#f7f7f5; --card:#fff; --ink:#1d1d1b; --quiet:#6b6b66; --line:#e3e2dd; --accent:#2563eb; --good:#15803d; --bad:#b91c1c; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#161615; --card:#1f1f1d; --ink:#ededea; --quiet:#a3a39d; --line:#33332f; --accent:#6ea0ff; --good:#4ade80; --bad:#f87171; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  main { max-width:760px; margin:0 auto; padding:24px 16px 64px; }
+  header { display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap; }
+  h1 { font-size:22px; margin:0; }
+  a { color:var(--accent); }
+  .sub { color:var(--quiet); margin:4px 0 20px; }
+  form { display:flex; gap:8px; }
+  input[type=text] { flex:1; min-width:0; padding:12px 14px; font-size:16px; border:1px solid var(--line); border-radius:10px; background:var(--card); color:var(--ink); }
+  button { padding:0 18px; font-size:15px; border:0; border-radius:10px; background:var(--accent); color:#fff; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:default; }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0 24px; }
+  .chip { padding:6px 12px; border:1px solid var(--line); border-radius:999px; background:var(--card); color:var(--ink); cursor:pointer; font-size:14px; }
+  .steps { list-style:none; padding:0; margin:0; }
+  .step { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 14px; margin-bottom:8px; animation: in .25s ease; }
+  .step .head { display:flex; gap:8px; align-items:center; font-weight:600; }
+  .step .n { color:var(--quiet); font-weight:400; font-size:13px; }
+  .step pre { margin:6px 0 0; white-space:pre-wrap; word-break:break-all; font-size:12.5px; color:var(--quiet); max-height:160px; overflow:auto; }
+  .ok { color:var(--good); } .fail { color:var(--bad); }
+  .answer { background:var(--card); border:2px solid var(--accent); border-radius:12px; padding:14px 16px; margin-top:16px; white-space:pre-wrap; }
+  .meta { color:var(--quiet); font-size:13px; margin-top:8px; }
+  .card { white-space:normal; }
+  .card .concl { font-size:16.5px; font-weight:600; margin:0 0 10px; }
+  .card h3 { font-size:13px; color:var(--quiet); font-weight:600; margin:14px 0 6px; letter-spacing:.02em; }
+  .card table { width:100%; border-collapse:collapse; font-size:14px; }
+  .card td { padding:5px 0; border-top:1px solid var(--line); vertical-align:top; }
+  .card td.v { font-variant-numeric:tabular-nums; font-weight:600; text-align:right; padding:5px 10px; white-space:nowrap; }
+  .card td.s { color:var(--quiet); font-size:12px; text-align:right; white-space:nowrap; }
+  .card ul { margin:0; padding-left:20px; }
+  .badge { display:inline-block; padding:1px 8px; border-radius:999px; font-size:13px; font-weight:600; border:1px solid currentColor; }
+  .c-高 { color:var(--good); } .c-中 { color:var(--accent); } .c-低 { color:var(--bad); }
+  .disc { color:var(--quiet); font-size:13px; margin-top:12px; }
+  details { margin-top:32px; color:var(--quiet); font-size:14px; }
+  details input { padding:6px 10px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--ink); }
+  @keyframes in { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }

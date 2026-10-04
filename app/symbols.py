@@ -59,3 +59,25 @@ def is_pair(symbol: str) -> bool:
 
 def yahoo_ticker(symbol: str) -> str:
     return symbol.replace("/", "") + "=X" if is_pair(symbol) else symbol
+
+
+INDEXES = {"000300.SS": "沪深300", "^HSI": "恒生指数", "^AXJO": "澳洲 ASX 200", "^GSPC": "标普500"}
+
+
+def benchmark(symbol: str) -> str | None:
+    """股票对应的大盘指数：A 股比沪深300，港股比恒生，澳股比 ASX 200，其他比标普500。货币对没有大盘。"""
+    if is_pair(symbol) or symbol in INDEXES:
+        return None
+    if symbol.endswith((".SS", ".SZ")):
+        return "000300.SS"
+    if symbol.endswith(".HK"):
+        return "^HSI"
+    if symbol.endswith(".AX"):
+        return "^AXJO"
+    return "^GSPC"
+
+
+def display_name(symbol: str) -> str:
+    """给页面显示的名字：英伟达（NVDA）。不认识的代码就显示代码本身。"""
+    name = INDEXES.get(symbol) or next((k for k, v in STOCKS.items() if v == symbol), None)
+    return f"{name}（{symbol}）" if name else symbol

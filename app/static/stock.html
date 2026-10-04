@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>股票走势 · 投资学习 Agent</title>
+<link rel="stylesheet" href="/static/common.css">
+<style>
+  :root { --series-1:#2a78d6; --series-2:#eb6834; --grid:#ebeae6; }
+  @media (prefers-color-scheme: dark) { :root { --series-1:#3987e5; --series-2:#d95926; --grid:#2a2a27; } }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:space-between; margin:20px 0 10px; }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .seg button { background:var(--card); color:var(--ink); border-radius:0; padding:6px 12px; font-size:14px; }
+  .seg button[aria-pressed=true] { background:var(--accent); color:#fff; }
+  .title { font-size:18px; font-weight:600; margin:0; }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:8px; margin:12px 0; }
+  .tile { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+  .tile .k { color:var(--quiet); font-size:13px; }
+  .tile .v { font-size:20px; font-weight:600; font-variant-numeric:tabular-nums; }
+  .tile .s { color:var(--quiet); font-size:12px; }
+  .chartbox { position:relative; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px 8px 4px; }
+  svg { display:block; width:100%; height:auto; touch-action:none; }
+  svg text { fill:var(--quiet); font-size:11px; font-variant-numeric:tabular-nums; }
+  .legend { display:flex; gap:16px; font-size:13px; color:var(--quiet); padding:0 8px 6px; }
+  .legend i { display:inline-block; width:14px; height:2px; vertical-align:middle; margin-right:6px; }
+  .tip { position:absolute; pointer-events:none; background:var(--card); border:1px solid var(--line); border-radius:8px;
+         padding:6px 10px; font-size:13px; box-shadow:0 2px 8px rgba(0,0,0,.08); display:none; white-space:nowrap; }
+  .tip b { font-variant-numeric:tabular-nums; }
+  .tip .d { color:var(--quiet); font-size:12px; }
+  .tip i { display:inline-block; width:10px; height:2px; vertical-align:middle; margin-right:6px; }
+  .mini { list-style:none; padding:0; margin:12px 0 0; color:var(--quiet); font-size:14px; }
+  .mini li { padding:2px 0; }
+  table.data { width:100%; border-collapse:collapse; font-size:13px; font-variant-numeric:tabular-nums; }
+  table.data td, table.data th { padding:3px 6px; border-top:1px solid var(--line); text-align:right; }
+  table.data th:first-child, table.data td:first-child { text-align:left; }
+  .err { color:var(--bad); margin:12px 0; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>股票走势</h1>
+    <nav><a href="/">问答</a> · <a href="/eval">评测面板 →</a></nav>
+  </header>
+  <p class="sub">先看数据，再让 agent 分析。图表数据直接来自行情接口，不经过模型。仅供学习，不构成投资建议。</p>
+  <form id="f">
+    <input id="q" type="text" placeholder="股票名或代码，例如：英伟达、AAPL、600519.SS" autocomplete="off">
+    <button>查看</button>
+  </form>
+  <div class="chips">
+    <span class="chip">英伟达</span><span class="chip">苹果</span><span class="chip">特斯拉</span>
+    <span class="chip">茅台</span><span class="chip">腾讯</span><span class="chip">必和必拓</span>
+  </div>
+
+  <div id="view" hidden>
+    <div class="bar">
+      <p class="title" id="name"></p>
+      <span class="seg" id="range">
+        <button type="button" data-days="22" aria-pressed="true">1 个月</button><button type="button" data-days="66">3 个月</button><button type="button" data-days="365">1 年</button>
+      </span>
+    </div>
+    <div class="tiles" id="tiles"></div>
+    <div class="bar">
+      <span class="seg" id="mode">
+        <button type="button" data-mode="price" aria-pressed="true">价格</button><button type="button" data-mode="index">和大盘对比</button>
+      </span>
+    </div>
+    <div class="chartbox">
+      <div class="legend" id="legend"></div>
+      <svg id="chart" role="img"></svg>
+      <div class="tip" id="tip"></div>
+    </div>
+    <details><summary>查看数据表</summary><table class="data" id="table"></table></details>
+
+    <div class="bar"><button type="button" id="analyze" style="padding:10px 18px">让 agent 分析这只股票</button></div>
+    <ul class="mini" id="steps"></ul>
+    <div id="answer"></div>
+  </div>
+  <p class="err" id="err"></p>
+</main>
+<script src="/static/common.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const session = (() => { try { return 'stock-' + (localStorage.sid || (localStorage.sid = crypto.randomUUID())); } catch { return 'stock'; } })();
+let data = null, symbol = '', days = 22, mode = 'price';
+
+document.querySelectorAll('.chip').forEach(c => c.onclick = () => { $('q').value = c.textContent; load(); });
+$('f').onsubmit = e => { e.preventDefault(); load(); };
+pick('range', b => { days = +b.dataset.days; load(); });
+pick('mode', b => { mode = b.dataset.mode; draw(); });
+$('analyze').onclick = analyze;
+window.addEventListener('resize', () => data && draw());
+
+function pick(id, fn) {
+  $(id).querySelectorAll('button').forEach(b => b.onclick = () => {
+    $(id).querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+    fn(b);
+  });
+}
+
+const fmt = (v, d = 2) => Number(v).toLocaleString('zh-CN', { minimumFractionDigits: d, maximumFractionDigits: d });
+const pct = v => (v > 0 ? '+' : '') + fmt(v) + '%';
+
+async function load() {
+  const q = $('q').value.trim(); if (!q) return;
+  $('err').textContent = '';
+  const res = await fetch(`/api/series?symbol=${encodeURIComponent(q)}&days=${days}`);
+  if (!res.ok) { $('err').textContent = (await res.json()).detail || '查不到数据'; $('view').hidden = true; return; }
+  data = await res.json();
+  if (data.symbol !== symbol) { $('steps').innerHTML = ''; $('answer').innerHTML = ''; }
+  symbol = data.symbol;
+  $('view').hidden = false;
+  $('name').textContent = data.name;
+  const st = data.stats;
+  $('tiles').replaceChildren(
+    tile('最新价', fmt(st.last), st.date),
+    tile(`区间涨跌（${data.days} 个交易日）`, pct(st.change_pct), ''),
+    tile('区间最高 / 最低', `${fmt(st.high)} / ${fmt(st.low)}`, ''),
+    tile('52 周最高 / 最低', `${fmt(st.high_52w)} / ${fmt(st.low_52w)}`, ''),
+    tile('日波动率', fmt(st.daily_volatility_pct, 3) + '%', '每日涨跌幅的标准差'));
+  $('mode').querySelector('[data-mode=index]').disabled = !data.index_points;
+  if (!data.index_points && mode === 'index') $('mode').querySelector('[data-mode=price]').click();
+  draw();
+}
+
+function tile(k, v, s) { const t = el('div', 'tile'); t.append(el('div', 'k', k), el('div', 'v', v), el('div', 's', s)); return t; }
+
+// 一条或两条线。和大盘对比时两条都换算成「起点 = 100」，这样共用一个纵轴，不需要双纵轴。
+function series() {
+  const own = { name: data.name, color: 'var(--series-1)', pts: data.points };
+  if (mode !== 'index' || !data.index_points) return { list: [own], unit: '' };
+  const idx = new Map(data.index_points);
+  const common = data.points.filter(([d]) => idx.has(d));
+  const base = (pts) => pts[0][1];
+  const rebase = pts => pts.map(([d, v]) => [d, v / base(pts) * 100]);
+  return { unit: '（起点 = 100）', list: [
+    { ...own, pts: rebase(common) },
+    { name: data.index_name, color: 'var(--series-2)', pts: rebase(common.map(([d]) => [d, idx.get(d)])) }] };
+}
+
+function draw() {
+  const { list, unit } = series();
+  const svg = $('chart'), W = Math.max(300, svg.clientWidth || 700), H = Math.round(W * 0.45);
+  const m = { l: 52, r: list.length > 1 ? 72 : 16, t: 10, b: 24 };
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('aria-label', `${list.map(s => s.name).join('、')}走势图${unit}`);
+  const all = list.flatMap(s => s.pts.map(p => p[1]));
+  let lo = Math.min(...all), hi = Math.max(...all); const pad = (hi - lo) * 0.08 || 1; lo -= pad; hi += pad;
+  const n = list[0].pts.length;
+  const x = i => m.l + (W - m.l - m.r) * (n > 1 ? i / (n - 1) : 0);
+  const y = v => m.t + (H - m.t - m.b) * (1 - (v - lo) / (hi - lo));
+  const ns = 'http://www.w3.org/2000/svg';
+  const mk = (tag, attrs, text) => { const e = document.createElementNS(ns, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; return e; };
+  svg.replaceChildren();
+  for (let k = 0; k <= 4; k++) {   // 横向网格线和纵轴刻度
+    const v = lo + (hi - lo) * k / 4;
+    svg.append(mk('line', { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), stroke: 'var(--grid)', 'stroke-width': 1 }),
+               mk('text', { x: m.l - 6, y: y(v) + 4, 'text-anchor': 'end' }, fmt(v)));
+  }
+  const dates = list[0].pts.map(p => p[0]);
+  [0, Math.floor((n - 1) / 2), n - 1].forEach((i, k) => svg.append(
+    mk('text', { x: x(i), y: H - 6, 'text-anchor': ['start', 'middle', 'end'][k] }, dates[i])));
+  list.forEach(s => {
+    svg.append(mk('path', { d: s.pts.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p[1]).toFixed(1)}`).join(''),
+      fill: 'none', stroke: s.color, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+    if (list.length > 1) {   // 直接在线尾标名字
+      const last = s.pts[n - 1][1];
+      svg.append(mk('text', { x: W - m.r + 6, y: y(last) + 4 }, `${s.name.split('（')[0]} ${fmt(last, 1)}`));
+    }
+  });
+  $('legend').replaceChildren(...(list.length > 1 ? list.map(s => { const sp = el('span'); const i = el('i'); i.style.background = s.color; sp.append(i, s.name); return sp; }) : []));
+  $('legend').append(el('span', null, unit));
+
+  // 悬停：竖线吸附到最近的日期，提示框列出每条线在这一天的值
+  const hair = mk('line', { y1: m.t, y2: H - m.b, stroke: 'var(--quiet)', 'stroke-width': 1, visibility: 'hidden' });
+  const dots = list.map(s => mk('circle', { r: 4, fill: s.color, stroke: 'var(--card)', 'stroke-width': 2, visibility: 'hidden' }));
+  svg.append(hair, ...dots);
+  const tip = $('tip');
+  svg.onpointermove = ev => {
+    const r = svg.getBoundingClientRect(), px = (ev.clientX - r.left) * W / r.width;
+    const i = Math.max(0, Math.min(n - 1, Math.round((px - m.l) / (W - m.l - m.r) * (n - 1))));
+    hair.setAttribute('x1', x(i)); hair.setAttribute('x2', x(i)); hair.setAttribute('visibility', 'visible');
+    dots.forEach((d, k) => { d.setAttribute('cx', x(i)); d.setAttribute('cy', y(list[k].pts[i][1])); d.setAttribute('visibility', 'visible'); });
+    tip.replaceChildren(el('div', 'd', dates[i]), ...list.map(s => {
+      const row = el('div'), key = el('i'); key.style.background = s.color;
+      row.append(key, el('b', null, fmt(s.pts[i][1])), document.createTextNode(' ' + s.name)); return row; }));
+    tip.style.display = 'block';
+    const left = x(i) * r.width / W + 8;
+    tip.style.left = Math.min(left, r.width - tip.offsetWidth) + 'px'; tip.style.top = '8px';
+  };
+  svg.onpointerleave = () => { tip.style.display = 'none'; hair.setAttribute('visibility', 'hidden'); dots.forEach(d => d.setAttribute('visibility', 'hidden')); };
+
+  // 数据表：不方便看图时也能读到每个数
+  const head = el('tr'); head.append(el('th', null, '日期'), ...list.map(s => el('th', null, s.name)));
+  $('table').replaceChildren(head, ...dates.map((d, i) => { const tr = el('tr'); tr.append(el('td', null, d), ...list.map(s => el('td', null, fmt(s.pts[i][1])))); return tr; }).reverse());
+}
+
+async function analyze() {
+  if (!data) return;
+  $('analyze').disabled = true; $('steps').innerHTML = ''; $('answer').innerHTML = '';
+  const calls = {};
+  await streamAsk(`分析一下${data.name}最近 30 天的走势，和大盘比怎么样，有什么风险？`, session, e => {
+    if (e.type === 'tool_call') { const li = el('li', null, `… ${NAMES[e.name] || e.name}`); calls[e.id] = li; $('steps').append(li); }
+    else if (e.type === 'tool_result' && calls[e.id]) { const li = calls[e.id]; li.textContent = `${e.ok ? '✓' : '✗'} ${NAMES[e.name] || e.name}`; li.className = e.ok ? 'ok' : 'fail'; }
+    else if (e.type === 'answer') $('answer').replaceChildren(e.structured ? card(e.structured) : el('div', 'answer', e.content));
+    else if (e.type === 'error') $('answer').replaceChildren(el('div', 'answer fail', '出错了：' + e.message));
+  });
+  $('analyze').disabled = false;
+}
+
+const first = new URLSearchParams(location.search).get('symbol');
+if (first) { $('q').value = first; load(); }
+</script>
+</body>
+</html>

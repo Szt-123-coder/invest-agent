@@ -10,7 +10,7 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Header
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
@@ -21,6 +21,8 @@ from .config import get_settings
 from .db import dumps
 from .jobs import start_background
 from .llm import DemoModel
+from .symbols import display_name
+from .tools.market import series_overview
 
 STATIC = Path(__file__).parent / "static"
 
@@ -59,6 +61,32 @@ def index() -> FileResponse:
 @app.get("/eval")
 def eval_page() -> FileResponse:
     return FileResponse(STATIC / "eval.html")
+
+
+@app.get("/stock")
+def stock_page() -> FileResponse:
+    return FileResponse(STATIC / "stock.html")
+
+
+@app.get("/static/{name}")
+def static_file(name: str) -> FileResponse:
+    path = STATIC / name
+    if path.parent != STATIC or not path.is_file():
+        raise HTTPException(404)
+    return FileResponse(path)
+
+
+@app.get("/api/series")
+def api_series(symbol: str, days: int = 22) -> dict:
+    """股票页面画图用：价格点、关键数字和大盘走势。直接查数据，不经过模型，所以不花钱。"""
+    if not symbol.strip():
+        raise HTTPException(404, "请输入股票名或代码")
+    try:
+        data = series_overview(symbol, days)
+    except Exception as e:
+        raise HTTPException(404, f"查不到 {symbol} 的数据：{e}")
+    data["name"] = display_name(data["symbol"])
+    return data
 
 
 @app.get("/healthz")

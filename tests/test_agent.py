@@ -66,3 +66,12 @@ def test_history_only_from_same_model():
     ask("美元现在多少", session_id="s2")
     assert len(_history("s2", "demo-rules")) == 2
     assert _history("s2", "deepseek-chat") == []
+
+
+def test_stock_analysis_compares_with_index():
+    from app.symbols import benchmark
+    assert [benchmark(s) for s in ["NVDA", "600519.SS", "0700.HK", "BHP.AX", "AUD/CNY"]] == \
+        ["^GSPC", "000300.SS", "^HSI", "^AXJO", None]
+    r = ask("分析一下英伟达（NVDA）最近 30 天的走势，和大盘比怎么样，有什么风险？")
+    assert "compare_with_index" in tool_names(r)
+    assert any(e["source"] == "compare_with_index" for e in r["structured"]["evidence"])
