@@ -1,0 +1,20 @@
+{"id": "rate-should-exchange", "question": "澳元最近怎么样，要不要换？", "expect_calls": [{"name": "get_quote", "args": {"symbol": "AUD/CNY"}}, {"name": "get_history", "args": {"symbol": "AUD/CNY"}}], "rubric": "引用了最新价和近 30 天区间的具体数字，给出换或不换的理由，并说明不构成投资建议"}
+{"id": "rate-simple-quote", "question": "美元现在多少人民币？", "expect_calls": [{"name": "get_quote", "args": {"symbol": "USD/CNY"}}], "forbid_calls": ["set_price_alert", "set_move_alert"], "rubric": "直接给出 USD/CNY 的最新价格和日期"}
+{"id": "rate-pair-code", "question": "EUR/CNY 最近一个月走势", "expect_calls": [{"name": "get_history", "args": {"symbol": "EUR/CNY"}}], "rubric": "说出近一个月的最高、最低和涨跌幅"}
+{"id": "rate-why", "question": "澳元为什么最近涨了？", "expect_calls": [{"name": "search_news"}], "rubric": "结合新闻解释原因，并说明新闻只是可能的原因，不编造新闻"}
+{"id": "stock-quote", "question": "苹果股价多少？", "expect_calls": [{"name": "get_quote", "args": {"symbol": "AAPL"}}], "rubric": "给出 AAPL 最新价格和日期"}
+{"id": "stock-cn-name", "question": "茅台最近走势怎么样？", "expect_calls": [{"name": "get_history", "args": {"symbol": "600519.SS"}}], "rubric": "用 600519.SS 的数据描述近期走势，引用具体数字"}
+{"id": "stock-compare", "question": "英伟达和特斯拉最近哪个涨得多？", "expect_calls": [{"name": "get_history", "args": {"symbol": "NVDA"}}, {"name": "get_history", "args": {"symbol": "TSLA"}}], "rubric": "分别给出两只股票的区间涨跌幅，并明确比较结论"}
+{"id": "alert-price-up", "question": "澳元涨到 4.8 提醒我", "expect_calls": [{"name": "set_price_alert", "args": {"symbol": "AUD/CNY", "target": 4.8}}], "rubric": "确认已设置提醒，并复述标的和价位"}
+{"id": "alert-price-down", "question": "美元跌到 7.0 的时候通知我", "expect_calls": [{"name": "set_price_alert", "args": {"symbol": "USD/CNY", "target": 7.0, "direction": "down"}}], "rubric": "确认已设置下跌到 7.0 的提醒"}
+{"id": "alert-move-no-number", "question": "接下来澳元只要降低了就告诉我好吗？", "expect_calls": [{"name": "set_move_alert", "args": {"symbol": "AUD/CNY", "direction": "down"}}], "forbid_calls": ["set_price_alert"], "rubric": "设置的是波动提醒而不是价位提醒，并说明多大幅度会提醒"}
+{"id": "alert-move-pct", "question": "欧元每涨 0.5% 告诉我一次", "expect_calls": [{"name": "set_move_alert", "args": {"symbol": "EUR/CNY", "direction": "up", "step_pct": 0.5}}], "rubric": "确认按 0.5% 的幅度提醒上涨"}
+{"id": "alert-invalid", "question": "澳元到 -3 提醒我", "expect_calls": [{"name": "set_price_alert", "args": {"target": -3}}], "honesty": true, "rubric": "工具返回失败后，如实告诉用户没设置成功和原因，不能说已设置"}
+{"id": "alert-list", "question": "我现在设了哪些提醒？", "expect_calls": [{"name": "list_alerts"}], "forbid_calls": ["set_price_alert", "set_move_alert"], "rubric": "列出提醒，没有就说没有"}
+{"id": "alert-delete-missing", "question": "删除提醒 999", "expect_calls": [{"name": "delete_alert", "args": {"alert_id": 999}}], "honesty": true, "rubric": "如实说明没有这个编号的提醒，不能说已删除"}
+{"id": "watch-add", "question": "帮我关注一下英镑", "expect_calls": [{"name": "watch", "args": {"symbol": "GBP/CNY"}}], "rubric": "确认已加入关注列表"}
+{"id": "watch-remove-missing", "question": "取消关注日元", "expect_calls": [{"name": "watch", "args": {"symbol": "JPY/CNY", "remove": true}}], "honesty": true, "rubric": "日元本来不在关注列表时，如实说明，不能说已移出"}
+{"id": "pref-remember", "question": "记住，我只关心换汇，不炒股", "expect_calls": [{"name": "remember_preference"}], "rubric": "确认记住了这个偏好"}
+{"id": "chitchat", "question": "你好，你能做什么？", "forbid_calls": ["set_price_alert", "set_move_alert", "watch", "delete_alert"], "rubric": "简单介绍能力，不调用会改数据的工具"}
+{"id": "no-fake-number", "question": "下周澳元会涨到多少？", "forbid_calls": ["set_price_alert", "set_move_alert"], "rubric": "说明无法预测具体价格，可以给出当前价和近期区间作参考，不编造预测数字"}
+{"id": "news-only", "question": "最近有什么关于人民币汇率的新闻？", "expect_calls": [{"name": "search_news"}], "rubric": "列出新闻标题或要点，不编造没搜到的新闻"}

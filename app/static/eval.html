@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>评测面板</title>
+<style>
+  :root { --bg:#f7f7f5; --card:#fff; --ink:#1d1d1b; --quiet:#6b6b66; --line:#e3e2dd; --accent:#2563eb; --good:#15803d; --bad:#b91c1c; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#161615; --card:#1f1f1d; --ink:#ededea; --quiet:#a3a39d; --line:#33332f; --accent:#6ea0ff; --good:#4ade80; --bad:#f87171; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  main { max-width:860px; margin:0 auto; padding:24px 16px 64px; }
+  header { display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:12px; }
+  h1 { font-size:22px; margin:0; } h2 { font-size:17px; margin:28px 0 8px; }
+  a { color:var(--accent); }
+  .sub { color:var(--quiet); margin:4px 0 16px; }
+  .wrap { overflow-x:auto; background:var(--card); border:1px solid var(--line); border-radius:10px; }
+  table { border-collapse:collapse; width:100%; font-size:14px; }
+  th, td { text-align:left; padding:8px 12px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--quiet); font-weight:500; white-space:nowrap; }
+  tr:last-child td { border-bottom:0; }
+  .ok { color:var(--good); } .fail { color:var(--bad); }
+  .bar { height:8px; border-radius:4px; background:var(--line); min-width:80px; }
+  .bar > i { display:block; height:100%; border-radius:4px; background:var(--accent); }
+  .empty { padding:16px; color:var(--quiet); }
+</style>
+</head>
+<body>
+<main>
+  <header><h1>评测面板</h1><a href="/">← 回到提问</a></header>
+  <p class="sub">规则评测检查 agent 做的事（工具和参数、失败时是否如实说明），模型裁判按评分标准给回答打 1–5 分。题目在 <code>evals/cases.jsonl</code>。</p>
+  <h2>每次评测</h2>
+  <div class="wrap"><table id="summary"><thead><tr><th>时间</th><th>模型</th><th>规则通过</th><th></th><th>裁判平均分</th></tr></thead><tbody></tbody></table></div>
+  <h2>最近一次的逐题结果</h2>
+  <div class="wrap"><table id="latest"><thead><tr><th>题目</th><th>规则</th><th>裁判</th><th>说明</th></tr></thead><tbody></tbody></table></div>
+</main>
+<script>
+const td = (t, cls) => { const x = document.createElement('td'); x.textContent = t; if (cls) x.className = cls; return x; };
+fetch('/api/eval').then(r => r.json()).then(d => {
+  const sb = document.querySelector('#summary tbody'), lb = document.querySelector('#latest tbody');
+  if (!d.summary.length) { sb.innerHTML = '<tr><td colspan="5" class="empty">还没有评测记录，运行 python -m evals.run_eval</td></tr>'; return; }
+  for (const b of d.summary) {
+    const tr = document.createElement('tr'), bar = document.createElement('td');
+    bar.innerHTML = `<div class="bar"><i style="width:${(b.rule_pass / b.cases * 100).toFixed(0)}%"></i></div>`;
+    tr.append(td(new Date(b.at).toLocaleString()), td(b.model), td(`${b.rule_pass} / ${b.cases}`), bar, td(b.judge_avg ?? '—'));
+    sb.append(tr);
+  }
+  for (const r of d.latest) {
+    const tr = document.createElement('tr');
+    tr.append(td(r.case_id), td(r.rule_pass ? '✓ 通过' : '✗ 未通过', r.rule_pass ? 'ok' : 'fail'), td(r.judge_score ?? '—'), td(r.detail));
+    lb.append(tr);
+  }
+});
+</script>
+</body>
+</html>
