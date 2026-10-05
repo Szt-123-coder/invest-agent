@@ -176,7 +176,7 @@ def build(symbols: list[str] | None = None, extract: Extractor | None = None,
     tz = ZoneInfo(get_settings().timezone)
     return {"date": datetime.now(tz).strftime("%Y-%m-%d %H:%M"), "symbols": symbols, "prices": prices,
             "overview": ex.overview, "items": items, "dropped": dropped, "errors": errors,
-            "news_count": len(news), "demo": extract is None}
+            "news_count": len(news), "demo": extract is None, "default_symbols": symbols == DEFAULT_SYMBOLS}
 
 
 ARROW = {"偏涨": "↑", "偏跌": "↓", "看不出": "·"}

@@ -56,6 +56,7 @@ function render(d) {
     }
   }
   const notes = [];
+  if (d.default_symbols) notes.push('关注列表是空的，默认看美元和澳元；在问答页说「帮我关注日元」就会加进来，但默认的两个会不再显示，想继续看要一起关注。');
   if (d.dropped.length) notes.push(`核对时丢掉 ${d.dropped.length} 项：${d.dropped.join('；')}`);
   if (d.errors.length) notes.push(d.errors.join('；'));
   notes.push(`共搜到 ${d.news_count} 条新闻。仅供学习参考，不构成投资建议。`);
