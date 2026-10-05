@@ -10,5 +10,6 @@ def fresh_db(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "sqlite://")
     monkeypatch.delenv("ACCESS_PASSWORD", raising=False)
     monkeypatch.delenv("SCHEDULER_MINUTES", raising=False)
+    monkeypatch.delenv("DIGEST_TIMES", raising=False)
     db.init_db("sqlite://")
     yield

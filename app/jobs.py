@@ -57,12 +57,12 @@ def check_alert(a: db.Alert, price: float) -> str | None:
     return msg
 
 
-def push(title: str, content: str) -> bool:
+def push(title: str, content: str, template: str = "html") -> bool:
     token = os.getenv("PUSHPLUS_TOKEN", "")
     if not token:
         log.info("没有 PUSHPLUS_TOKEN，只打印：%s %s", title, content)
         return False
-    r = httpx.post("http://www.pushplus.plus/send", json={"token": token, "title": title, "content": content}, timeout=15)
+    r = httpx.post("http://www.pushplus.plus/send", json={"token": token, "title": title, "content": content, "template": template}, timeout=15)
     return r.json().get("code") == 200
 
 

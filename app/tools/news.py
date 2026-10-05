@@ -20,19 +20,26 @@ DEMO_NEWS = [
 ]
 
 
+def fetch_news(query: str, max_results: int = 3, days: int = 7) -> list[dict]:
+    """搜新闻，返回 [{title, source, snippet}]；失败时抛出异常。演示模式返回示例新闻。"""
+    s = get_settings()
+    n = max(1, min(int(max_results), 5))
+    if s.demo_mode or not s.tavily_api_key:
+        return DEMO_NEWS[:n]
+    r = httpx.post(TAVILY, json={"api_key": s.tavily_api_key, "query": query, "topic": "news",
+                                  "max_results": n, "days": days}, timeout=20)
+    r.raise_for_status()
+    return [{"title": x.get("title", ""), "source": x.get("url", ""), "snippet": (x.get("content") or "")[:300]}
+            for x in r.json().get("results", [])]
+
+
 @tool
 def search_news(query: str, max_results: int = 3) -> str:
     """搜索和 query 相关的最近财经新闻，返回标题、来源和摘要。query 用中文或英文关键词，例如「澳元 汇率」。"""
     s = get_settings()
-    n = max(1, min(int(max_results), 5))
-    if s.demo_mode or not s.tavily_api_key:
-        return dumps({"ok": True, "demo": True, "query": query, "results": DEMO_NEWS[:n]})
     try:
-        r = httpx.post(TAVILY, json={"api_key": s.tavily_api_key, "query": query, "topic": "news",
-                                      "max_results": n, "days": 7}, timeout=20)
-        r.raise_for_status()
+        results = fetch_news(query, max_results)
     except Exception as e:
         return dumps({"ok": False, "error": f"新闻搜索失败：{e}"})
-    results = [{"title": x.get("title", ""), "source": x.get("url", ""), "snippet": (x.get("content") or "")[:300]}
-               for x in r.json().get("results", [])]
-    return dumps({"ok": True, "query": query, "results": results})
+    demo = {"demo": True} if s.demo_mode or not s.tavily_api_key else {}
+    return dumps({"ok": True, **demo, "query": query, "results": results})

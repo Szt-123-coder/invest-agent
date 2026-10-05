@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>每日新闻摘要</title>
+<link rel="stylesheet" href="/static/common.css">
+<style>
+  .digest { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:16px; }
+  .digest .when { color:var(--quiet); font-size:13px; }
+  .digest .ov { font-weight:600; margin:4px 0 10px; }
+  .prices { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:6px; }
+  .price { border:1px solid var(--line); border-radius:8px; padding:4px 10px; font-size:14px; font-variant-numeric:tabular-nums; }
+  .digest h3 { font-size:14px; margin:14px 0 6px; }
+  .item { display:flex; gap:10px; padding:6px 0; border-top:1px solid var(--line); font-size:14px; }
+  .dir { flex:none; width:44px; font-weight:600; }
+  .d-偏涨 { color:var(--good); } .d-偏跌 { color:var(--bad); } .d-看不出 { color:var(--quiet); }
+  .why { color:var(--quiet); font-size:13px; }
+  .note { color:var(--quiet); font-size:13px; margin-top:8px; }
+  .bar { display:flex; gap:8px; align-items:center; margin-bottom:20px; flex-wrap:wrap; }
+  .bar button { padding:8px 16px; }
+  .bar label { color:var(--quiet); font-size:14px; }
+</style>
+</head>
+<body>
+<main>
+  <header><h1>每日新闻摘要</h1><nav><a href="/">问答</a> · <a href="/stock">股票页面</a> · <a href="/eval">评测面板 →</a></nav></header>
+  <p class="sub">每天定时给关注的标的搜新闻，模型提炼「发生了什么、偏涨还是偏跌」，代码核对后推送到微信。方向只是模型对新闻的解读，不是预测。</p>
+  <div class="bar">
+    <button id="run">现在生成一份</button>
+    <label><input type="checkbox" id="push"> 同时推送到微信</label>
+    <span id="msg" class="note"></span>
+  </div>
+  <div id="list"></div>
+</main>
+<script src="/static/common.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+function priceTile(p) {
+  return el('span', 'price', 'price' in p ? `${p.symbol} ${p.price}（${p.change_pct > 0 ? '+' : ''}${p.change_pct}%）` : `${p.symbol} 查不到`);
+}
+function render(d) {
+  const box = el('div', 'digest');
+  box.append(el('div', 'when', d.date + (d.demo ? ' · 演示模式' : '')), el('div', 'ov', d.overview));
+  const prices = el('div', 'prices'); d.prices.forEach(p => prices.append(priceTile(p))); box.append(prices);
+  for (const sym of d.symbols) {
+    box.append(el('h3', null, sym));
+    const items = d.items.filter(i => i.symbol === sym);
+    if (!items.length) box.append(el('div', 'why', '没有相关新闻'));
+    for (const i of items) {
+      const row = el('div', 'item'), body = el('div');
+      row.append(el('span', 'dir d-' + i.direction, i.direction));
+      const what = i.url.startsWith('http') ? Object.assign(el('a', null, i.what), { href: i.url, target: '_blank', rel: 'noopener' }) : el('span', null, i.what);
+      body.append(what, el('div', 'why', i.reason));
+      row.append(body); box.append(row);
+    }
+  }
+  const notes = [];
+  if (d.dropped.length) notes.push(`核对时丢掉 ${d.dropped.length} 项：${d.dropped.join('；')}`);
+  if (d.errors.length) notes.push(d.errors.join('；'));
+  notes.push(`共搜到 ${d.news_count} 条新闻。仅供学习参考，不构成投资建议。`);
+  box.append(el('div', 'note', notes.join(' ')));
+  return box;
+}
+function load() {
+  fetch('/api/digest').then(r => r.json()).then(list => {
+    $('list').replaceChildren(...(list.length ? list.map(render) : [el('div', 'note', '还没有摘要。点「现在生成一份」，或在服务器上设 DIGEST_TIMES 定时生成。')]));
+  });
+}
+$('run').onclick = async () => {
+  $('run').disabled = true; $('msg').textContent = '正在搜新闻、让模型提炼……';
+  const pw = localStorage.getItem('pw') || '';
+  const r = await fetch('/api/digest/run?push=' + $('push').checked, { method: 'POST', headers: pw ? { Authorization: 'Bearer ' + pw } : {} });
+  const d = await r.json();
+  $('msg').textContent = r.ok ? (d.pushed ? '已生成并推送' : '已生成') : (d.detail || '失败');
+  $('run').disabled = false; if (r.ok) load();
+};
+load();
+</script>
+</body>
+</html>

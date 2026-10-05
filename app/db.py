@@ -97,6 +97,16 @@ class Step(Base):
     run: Mapped[Run] = relationship(back_populates="steps")
 
 
+# ---------- 每日新闻摘要 ----------
+
+class Digest(Base):
+    """每生成一份摘要存一行：data 里是总览、价格、每条新闻的影响和被核对丢掉的项。"""
+    __tablename__ = "digests"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    data: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 # ---------- 评测结果 ----------
 
 class EvalResult(Base):

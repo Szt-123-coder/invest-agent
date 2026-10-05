@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
 from . import db
+from . import digest
 from .agent import run_stream
 from .config import get_settings
 from .db import dumps
@@ -35,6 +36,8 @@ async def lifespan(_: FastAPI):
     minutes = int(os.getenv("SCHEDULER_MINUTES", "0") or 0)
     if minutes > 0:
         start_background(minutes)
+    if digest.digest_times():
+        digest.start_background(digest.digest_times())
     yield
 
 
@@ -67,6 +70,11 @@ def eval_page() -> FileResponse:
 @app.get("/stock")
 def stock_page() -> FileResponse:
     return FileResponse(STATIC / "stock.html")
+
+
+@app.get("/digest")
+def digest_page() -> FileResponse:
+    return FileResponse(STATIC / "digest.html")
 
 
 @app.get("/static/{name}")
@@ -121,6 +129,25 @@ def api_ask(body: AskBody, authorization: str | None = Header(default=None)) -> 
 
     return StreamingResponse(events(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.get("/api/digest")
+def api_digest(limit: int = 7) -> list[dict]:
+    """最近几份新闻摘要，新的在前。"""
+    with db.session() as s:
+        rows = s.scalars(select(db.Digest).order_by(db.Digest.id.desc()).limit(min(limit, 30))).all()
+        return [{"id": r.id, **r.data} for r in rows]
+
+
+@app.post("/api/digest/run")
+def api_digest_run(push: bool = False, authorization: str | None = Header(default=None)) -> dict:
+    """马上生成一份摘要。会搜新闻、调模型（花钱），所以要访问密码；push=true 时同时推送到微信。"""
+    if not _authorized(authorization):
+        raise HTTPException(401, "生成摘要需要访问密码，访客可以看已经生成的摘要")
+    try:
+        return digest.run_once(pusher=None if push else (lambda *a: False))
+    except Exception as e:
+        raise HTTPException(502, f"生成摘要失败：{e}")
 
 
 @app.get("/api/runs")
