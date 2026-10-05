@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 from langchain.agents import create_agent
 from langchain.agents.structured_output import ToolStrategy
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from sqlalchemy import select
 
 from . import db
@@ -68,6 +68,26 @@ def _ok(content: str) -> bool:
         return True
 
 
+FINISH_PROMPT = """用户的问题：{question}
+
+工具已经查到的结果（按调用顺序）：
+{results}
+
+不要再调用别的工具。请根据上面的结果，按规则调用 Answer 交出回答。"""
+
+
+def _finish(model: BaseChatModel, question: str, results: list[tuple[str, str]]) -> Answer | None:
+    """模型查完数据却没交卷时（偶尔会这样），把工具结果整理好，只给它一个 Answer 工具，让它补交。"""
+    text = "\n".join(f"- {name}：{content[:1500]}" for name, content in results) or "（没有调用工具）"
+    try:
+        msg = model.bind_tools([Answer], tool_choice="any").invoke(
+            [SystemMessage(system_prompt()), HumanMessage(FINISH_PROMPT.format(question=question, results=text))])
+        calls = [c for c in msg.tool_calls if c["name"] == ANSWER_TOOL]
+        return Answer.model_validate(calls[0]["args"]) if calls else None
+    except Exception:  # 补交也失败，就如实显示没有回答
+        return None
+
+
 def run_stream(question: str, session_id: str = "default", model: BaseChatModel | None = None) -> Iterator[dict]:
     """运行一次 agent，按发生顺序产出事件，同时把每一步存进数据库。"""
     model = model or get_model()
@@ -75,6 +95,8 @@ def run_stream(question: str, session_id: str = "default", model: BaseChatModel 
     started = time.monotonic()
     names: dict[str, str] = {}
     answer = ""
+    results: list[tuple[str, str]] = []
+    last_ai: AIMessage | None = None
     with db.session() as s:
         messages = _history(session_id, model_name(model)) + [HumanMessage(question)]
         run = db.Run(session_id=session_id, question=question, model=model_name(model))
@@ -86,6 +108,8 @@ def run_stream(question: str, session_id: str = "default", model: BaseChatModel 
                 node = node or {}
                 events = []
                 for m in node.get("messages", []):
+                    if isinstance(m, AIMessage):
+                        last_ai = m
                     if isinstance(m, AIMessage) and m.tool_calls:
                         for c in m.tool_calls:
                             if c["name"] == ANSWER_TOOL:  # 交卷，不算一个步骤
@@ -97,6 +121,7 @@ def run_stream(question: str, session_id: str = "default", model: BaseChatModel 
                         events.append({"type": "answer", "content": answer, "structured": None})
                     elif isinstance(m, ToolMessage) and m.name != ANSWER_TOOL:
                         name = m.name or names.get(m.tool_call_id, "")
+                        results.append((name, str(m.content)))
                         events.append({"type": "tool_result", "id": m.tool_call_id, "name": name,
                                        "content": m.content, "ok": _ok(m.content)})
                 if isinstance(node.get("structured_response"), Answer):
@@ -106,6 +131,17 @@ def run_stream(question: str, session_id: str = "default", model: BaseChatModel 
                 for e in events:
                     s.add(db.Step(run_id=run.id, kind=e["type"], name=e.get("name", ""), payload=e))
                     yield e
+        if not answer:  # 图跑完了却没有回答：记下模型最后停在哪，再让它补交一次
+            reason = (last_ai.response_metadata.get("finish_reason") if last_ai else None) or "未知"
+            events = [{"type": "note", "content": f"模型没有交出回答（停止原因：{reason}），已根据工具结果让它补交"}]
+            structured = _finish(model, question, results)
+            if structured:
+                answer = render(structured)
+                events.append({"type": "answer", "content": answer, "structured": structured.model_dump(),
+                               "recovered": True})
+            for e in events:
+                s.add(db.Step(run_id=run.id, kind=e["type"], name="", payload=e))
+                yield e
         run.answer = answer
         run.duration_ms = int((time.monotonic() - started) * 1000)
         s.add_all([db.ChatMessage(session_id=session_id, role="user", content=question),
@@ -119,5 +155,6 @@ def ask(question: str, session_id: str = "default", model: BaseChatModel | None 
     events = list(run_stream(question, session_id, model))
     final = next((e for e in reversed(events) if e["type"] == "answer"), {})
     return {"answer": final.get("content", ""), "structured": final.get("structured"),
+            "notes": [e["content"] for e in events if e["type"] == "note"],
             "steps": [e for e in events if e["type"] in ("tool_call", "tool_result")],
             "run_id": events[0]["run_id"]}

@@ -84,3 +84,25 @@ def test_price_alert_already_reached_is_refused():
     r = json.loads(set_price_alert.invoke({"symbol": "USD/CNY", "target": now + 1, "direction": "down"}))
     assert not r["ok"] and "立刻触发" in r["error"]
     assert json.loads(set_price_alert.invoke({"symbol": "USD/CNY", "target": now - 1, "direction": "down"}))["ok"]
+
+
+def test_missing_answer_is_recovered():
+    """模型查完数据后既不交卷也不说话：记一条提示，并根据工具结果补交。"""
+    from langchain_core.messages import AIMessage
+    from langchain_core.outputs import ChatGeneration, ChatResult
+
+    from app.llm import DemoModel
+
+    class Silent(DemoModel):
+        def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+            if "不要再调用别的工具" in str(messages[-1].content):  # 补交时正常交卷
+                answer = {"conclusion": "美元兑人民币见工具结果", "confidence": "中", "confidence_reason": "补交"}
+                return ChatResult(generations=[ChatGeneration(message=self._submit(answer))])
+            if any(m.type == "tool" for m in messages):  # 查完数据后什么都不返回
+                return ChatResult(generations=[ChatGeneration(message=AIMessage(""))])
+            return super()._generate(messages, stop, run_manager, **kwargs)
+
+    r = ask("美元现在多少人民币？", model=Silent())
+    assert tool_names(r) == ["get_quote"]
+    assert r["notes"] and "补交" in r["notes"][0]
+    assert r["structured"] and "不构成投资建议" in r["answer"]

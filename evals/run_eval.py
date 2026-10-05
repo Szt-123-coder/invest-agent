@@ -170,11 +170,11 @@ def run(only: list[str] | None = None, database_url: str = "sqlite://") -> dict:
         passed, problems = rule_check(case, result)
         score, reason = judge(case, result, judge_model) if judge_model else (None, "演示模式不跑裁判")
         rows.append({"case_id": case["id"], "question": case["question"], "rule_pass": passed,
-                     "problems": "；".join(problems), "judge_score": score, "judge_reason": reason,
+                     "problems": "；".join(problems + [f"提示：{n}" for n in result.get("notes", [])]), "judge_score": score, "judge_reason": reason,
                      "calls": "；".join(f"{c['name']}{json.dumps(c['args'], ensure_ascii=False)}"
                                            for c in result["steps"] if c["type"] == "tool_call"),
                      "answer": result["answer"], "human_score": ""})
-        print(f"{'✓' if passed else '✗'} {case['id']:<24} 裁判 {score if score is not None else '-'}  {'；'.join(problems)}")
+        print(f"{'✓' if passed else '✗'} {case['id']:<24} 裁判 {score if score is not None else '-'}  {'；'.join(problems + result.get('notes', []))}")
     db.init_db(database_url if database_url != "sqlite://" else None)
     with db.session() as s:
         s.add_all([db.EvalResult(batch=batch, model=name, case_id=r["case_id"], rule_pass=r["rule_pass"],
