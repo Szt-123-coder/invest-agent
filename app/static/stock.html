@@ -146,7 +146,7 @@ function series() {
 function draw() {
   const { list, unit } = series();
   const svg = $('chart'), W = Math.max(300, svg.clientWidth || 700), H = Math.round(W * 0.45);
-  const m = { l: 52, r: list.length > 1 ? 72 : 16, t: 10, b: 24 };
+  const m = { l: 52, r: list.length > 1 ? 104 : 16, t: 10, b: 24 };  // 右边留出线尾名字的位置
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
   svg.setAttribute('aria-label', `${list.map(s => s.name).join('、')}走势图${unit}`);
   const all = list.flatMap(s => s.pts.map(p => p[1]));

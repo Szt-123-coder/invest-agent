@@ -145,7 +145,7 @@ def buy(owner: str, symbol: str, amount_cny: float, reason: str = "", fetch: Fet
     with db.session() as s:
         a = get_account(s, owner)
         if not a:
-            raise TradeError(f"{OWNERS.get(owner, owner)}还没开户")
+            raise TradeError(f"{OWNERS.get(owner, owner)}还没开户。请先问用户想用多少起始资金开户，不要自己替用户开")
         if amount_cny > a.cash + 1e-6:
             raise TradeError(f"现金不够：想买 {amount_cny:.2f} 元，账户里只有 {a.cash:.2f} 元")
         price, fx = m.quote(symbol)

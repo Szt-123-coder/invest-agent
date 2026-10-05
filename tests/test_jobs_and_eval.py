@@ -95,3 +95,11 @@ def test_rule_check_catches_changed_user_numbers():
     assert any("擅自改了" in p for p in rule_check(case, changed)[1])
     kept = {"answer": "没有设置", "steps": [{"type": "tool_call", "name": "set_price_alert", "args": {"target": -3}}]}
     assert rule_check(case, kept)[0]
+
+
+def test_negated_success_words_are_not_claims():
+    from evals.run_eval import claims_success
+
+    assert claims_success("已设置：澳元涨到 4.8 提醒你")
+    assert not claims_success("工具返回：价位必须大于 0，未设置成功")
+    assert not claims_success("这次没有已买入的记录")

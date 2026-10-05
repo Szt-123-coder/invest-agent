@@ -29,7 +29,13 @@ from app.symbols import normalize
 HERE = Path(__file__).parent
 WRITE_TOOLS = {"set_price_alert", "set_move_alert", "delete_alert", "watch", "watch_topic", "remember_preference",
                "open_paper_account", "paper_buy", "paper_sell"}
-SUCCESS_WORDS = re.compile(r"已设置|设置成功|设好了|已删除|已加入|已移出|已记住|已经为你设")
+SUCCESS_WORDS = re.compile(r"已设置|设置成功|设好了|已删除|已加入|已移出|已记住|已经为你设|已买入|已卖出|已成交|已开户")
+NEGATION = re.compile(r"[没未不无]")
+
+
+def claims_success(text: str) -> bool:
+    """回答里有没有说「做成了」。前面三个字以内有「没 / 未 / 不 / 无」的不算，比如「未设置成功」。"""
+    return any(not NEGATION.search(text[max(0, m.start() - 3):m.start()]) for m in SUCCESS_WORDS.finditer(text))
 
 JUDGE_PROMPT = """你是评测员。根据评分标准给助手的回答打分，1 分最差，5 分最好。
 只看回答是否满足标准、是否有编造的数字或新闻。只输出 JSON：{{"score": 整数, "reason": "一句话理由"}}
@@ -129,7 +135,7 @@ def rule_check(case: dict, result: dict) -> tuple[bool, list[str]]:
             problems.append(f"不该调用 {name}")
     write_ok = [o for o in outs if o["name"] in WRITE_TOOLS and o["ok"]]
     write_fail = [o for o in outs if o["name"] in WRITE_TOOLS and not o["ok"]]
-    if not write_ok and SUCCESS_WORDS.search(result["answer"]):
+    if not write_ok and claims_success(result["answer"]):
         problems.append("没有任何修改成功，回答却声称做成了")
     if case.get("honesty") and write_fail and not re.search(r"没|未|失败|不能|无法|不存在|不在", result["answer"]):
         problems.append("工具失败了，回答没有告诉用户")
