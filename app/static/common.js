@@ -1,6 +1,6 @@
 // 首页和股票页共用：工具中文名、建 DOM 元素、结构化回答卡片、流式提问
 const NAMES = { get_quote:'查最新价格', get_history:'查历史走势', find_similar_history:'找历史相似情形', compare_with_index:'和大盘对比', search_news:'搜索新闻', set_price_alert:'设价位提醒',
-  set_move_alert:'设波动提醒', list_alerts:'查看提醒', delete_alert:'删除提醒', watch:'修改关注', watch_topic:'修改关注话题', remember_preference:'记住偏好' };
+  set_move_alert:'设波动提醒', list_alerts:'查看提醒', delete_alert:'删除提醒', watch:'修改关注', watch_topic:'修改关注话题', open_paper_account:'开模拟账户', paper_buy:'模拟买入', paper_sell:'模拟卖出', paper_account:'查看模拟账户', remember_preference:'记住偏好' };
 
 // 结构化回答显示成卡片：结论、依据（每个数字注明来自哪个工具）、风险、执行结果、信心
 function card(a) {

@@ -16,7 +16,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
 from . import db
-from . import digest
+from . import ai_trader, digest
+from . import portfolio as pf
 from .agent import run_stream
 from .config import get_settings
 from .db import dumps
@@ -70,6 +71,11 @@ def eval_page() -> FileResponse:
 @app.get("/stock")
 def stock_page() -> FileResponse:
     return FileResponse(STATIC / "stock.html")
+
+
+@app.get("/portfolio")
+def portfolio_page() -> FileResponse:
+    return FileResponse(STATIC / "portfolio.html")
 
 
 @app.get("/digest")
@@ -148,6 +154,78 @@ def api_digest_run(push: bool = False, authorization: str | None = Header(defaul
         return digest.run_once(pusher=None if push else (lambda *a: False))
     except Exception as e:
         raise HTTPException(502, f"生成摘要失败：{e}")
+
+
+class OpenBody(BaseModel):
+    amount_cny: float
+
+
+class TradeBody(BaseModel):
+    action: str = Field(pattern="^(buy|sell)$")
+    symbol: str = Field(min_length=1, max_length=40)
+    amount_cny: float = 0
+    fraction: float = 1.0
+
+
+def _need_password(authorization: str | None) -> None:
+    if not _authorized(authorization):
+        raise HTTPException(401, "这个操作需要访问密码（在问答页底部填）")
+
+
+@app.get("/api/portfolio")
+def api_portfolio() -> dict:
+    """两个模拟账户的全部信息，加上 AI 最近几天的决定。"""
+    with db.session() as s:
+        rows = s.scalars(select(db.AiDecision).order_by(db.AiDecision.id.desc()).limit(10)).all()
+        decisions = [{"id": r.id, "at": r.created_at.isoformat(), **r.data} for r in rows]
+    try:
+        return {"user": pf.summary("user"), "ai": pf.summary("ai"), "decisions": decisions}
+    except Exception as e:
+        raise HTTPException(502, f"暂时查不到行情：{e}")
+
+
+@app.post("/api/portfolio/open")
+def api_portfolio_open(body: OpenBody, authorization: str | None = Header(default=None)) -> dict:
+    _need_password(authorization)
+    try:
+        pf.open_account("user", body.amount_cny)
+    except pf.TradeError as e:
+        raise HTTPException(400, str(e))
+    try:
+        pf.open_account("ai", body.amount_cny)  # AI 账户默认用同样的金额，已经开过就不动
+    except pf.TradeError:
+        pass
+    return api_portfolio()
+
+
+@app.post("/api/portfolio/trade")
+def api_portfolio_trade(body: TradeBody, authorization: str | None = Header(default=None)) -> dict:
+    """页面上的下单表单：只操作用户自己的账户。"""
+    _need_password(authorization)
+    try:
+        sym = resolve(body.symbol, ask=llm_asker(), verify=lambda code: fetch_series(code, 5)).symbol
+        if body.action == "buy":
+            pf.buy("user", sym, body.amount_cny)
+        else:
+            pf.sell("user", sym, body.fraction)
+    except (pf.TradeError, UnknownSymbol) as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(502, f"下单失败：{e}")
+    return api_portfolio()
+
+
+@app.post("/api/portfolio/ai-run")
+def api_portfolio_ai_run(authorization: str | None = Header(default=None)) -> dict:
+    """马上让 AI 账户做一次决定（平时每天早上自动跑）。用最近一份新闻摘要。"""
+    _need_password(authorization)
+    with db.session() as s:
+        latest = s.scalar(select(db.Digest).order_by(db.Digest.id.desc()))
+        d = latest.data if latest else None
+    try:
+        return ai_trader.run_once(d)
+    except Exception as e:
+        raise HTTPException(502, f"AI 决定失败：{e}")
 
 
 @app.get("/api/runs")

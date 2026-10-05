@@ -27,7 +27,8 @@ from app.llm import get_model, model_name
 from app.symbols import normalize
 
 HERE = Path(__file__).parent
-WRITE_TOOLS = {"set_price_alert", "set_move_alert", "delete_alert", "watch", "watch_topic", "remember_preference"}
+WRITE_TOOLS = {"set_price_alert", "set_move_alert", "delete_alert", "watch", "watch_topic", "remember_preference",
+               "open_paper_account", "paper_buy", "paper_sell"}
 SUCCESS_WORDS = re.compile(r"已设置|设置成功|设好了|已删除|已加入|已移出|已记住|已经为你设")
 
 JUDGE_PROMPT = """你是评测员。根据评分标准给助手的回答打分，1 分最差，5 分最好。

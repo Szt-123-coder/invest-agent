@@ -91,6 +91,16 @@ class DemoModel(BaseChatModel):
                 return [("set_price_alert", {"symbol": syms[0], "target": float(num.group()), "direction": d})]
             return [("set_move_alert", {"symbol": syms[0], "direction": direction,
                                          "step_pct": float(pct.group(1)) if pct else 0.2})]
+        money = re.search(r"(\d+(?:\.\d+)?)\s*(?:元|块)?", q)
+        if re.search(r"开.*(模拟)?账户|模拟账户.*开", q) and money:
+            return [("open_paper_account", {"amount_cny": float(money.group(1))})]
+        if re.search(r"(模拟)?账户|持仓|收益", q) and not re.search(r"提醒", q) and not re.search(r"买|卖", q):
+            return [("paper_account", {})]
+        if re.search(r"^(用|花)?.*\d.*买", q) and syms and money and not re.search(r"要不要|该不该|能不能", q):
+            return [("paper_buy", {"symbol": syms[0], "amount_cny": float(money.group(1))})]
+        if re.search(r"卖(掉|出)?", q) and syms and not re.search(r"要不要|该不该", q):
+            frac = 0.5 if "一半" in q else float(pct.group(1)) / 100 if pct else 1.0
+            return [("paper_sell", {"symbol": syms[0], "fraction": frac})]
         topic = re.search(r"(?:关注|留意)(?:一下)?(.+?)(?:的)?(?:新闻|话题|消息)", q)
         if topic and not syms:
             return [("watch_topic", {"topic": topic.group(1).strip("「」 "), "remove": "取消" in q})]
@@ -155,6 +165,13 @@ class DemoModel(BaseChatModel):
             elif "results" in data:
                 said.append("相关新闻：" + "；".join(r["title"] for r in data["results"]) + "。")
                 risks.append("新闻只看了标题，可能遗漏重要背景")
+            elif "user" in data and "total" in data.get("user", {}):
+                u = data["user"]
+                said.append(f"你的模拟账户总值 {u['total']} 元，收益 {u['return_pct']:+}%。")
+                evidence += [{"label": "账户总值", "value": str(u["total"]), "source": name},
+                             {"label": "收益率", "value": f"{u['return_pct']:+}%", "source": name}]
+                for b in u["benchmarks"]:
+                    evidence.append({"label": f"{b['name']}买了不动", "value": f"{b['return_pct']:+}%", "source": name})
             elif "alerts" in data:
                 said.append(f"共有 {len(data['alerts'])} 个提醒，关注 {', '.join(data['watchlist']) or '无'}。")
         failed = any(not a["ok"] for a in actions) or any(r.startswith("有一步没查到") for r in risks)
@@ -164,7 +181,8 @@ class DemoModel(BaseChatModel):
 
 
 WRITE_TOOLS = {"set_price_alert": "设置价位提醒", "set_move_alert": "设置波动提醒", "delete_alert": "删除提醒",
-               "watch": "修改关注", "watch_topic": "修改关注话题", "remember_preference": "记住偏好"}
+               "watch": "修改关注", "watch_topic": "修改关注话题", "remember_preference": "记住偏好",
+               "open_paper_account": "开模拟账户", "paper_buy": "模拟买入", "paper_sell": "模拟卖出"}
 
 
 def _write_detail(data: dict) -> str:
@@ -175,6 +193,11 @@ def _write_detail(data: dict) -> str:
         return f"提醒 #{data['alert_id']}：{data['symbol']} {what}时通知你"
     if "deleted" in data:
         return f"提醒 #{data['deleted']} 已删除"
+    if "trade_id" in data:
+        verb = "买入" if data["side"] == "buy" else "卖出"
+        return f"{verb} {data['symbol']} {data['quantity']} 份，成交 {data['amount_cny']} 元，手续费 {data['fee_cny']} 元"
+    if "initial_cash" in data:
+        return f"模拟账户已开，起始 {data['initial_cash']} 元" + ("，AI 账户也用同样金额开好了" if data["ai_account_opened"] else "")
     if "topic" in data:
         return f"话题「{data['topic']}」已{'加入' if data['watching'] else '移出'}关注"
     if "watching" in data:

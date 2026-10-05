@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>模拟投资</title>
+<link rel="stylesheet" href="/static/common.css">
+<style>
+  :root { --you:#2a78d6; --ai:#eb6834; --bench:#8a8a84; --grid:#ebeae6; }
+  @media (prefers-color-scheme: dark) { :root { --you:#3987e5; --ai:#d95926; --bench:#8f8f89; --grid:#2a2a27; } }
+  h2 { font-size:17px; margin:28px 0 10px; }
+  .accounts { display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:12px; }
+  .acct { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+  .acct h3 { margin:0 0 4px; font-size:15px; display:flex; align-items:center; gap:8px; }
+  .acct h3 i { display:inline-block; width:14px; height:3px; border-radius:2px; }
+  .big { font-size:24px; font-weight:600; font-variant-numeric:tabular-nums; }
+  .up { color:var(--good); } .down { color:var(--bad); }
+  .muted { color:var(--quiet); font-size:13px; }
+  table { width:100%; border-collapse:collapse; font-size:13.5px; margin-top:10px; }
+  th, td { text-align:left; padding:5px 4px; border-top:1px solid var(--line); vertical-align:top; }
+  th { color:var(--quiet); font-weight:500; }
+  td.n { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .chartbox { position:relative; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px 8px 4px; }
+  svg { display:block; width:100%; height:auto; }
+  svg text { fill:var(--quiet); font-size:11px; font-variant-numeric:tabular-nums; }
+  .legend { display:flex; flex-wrap:wrap; gap:14px; font-size:13px; color:var(--quiet); padding:0 8px 6px; }
+  .legend i { display:inline-block; width:16px; height:0; border-top:2px solid; vertical-align:middle; margin-right:6px; }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+  .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  .row input, .row select { padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--ink); font-size:15px; }
+  .row input[type=text] { flex:1; min-width:120px; }
+  .row input[type=number] { width:120px; }
+  .row button { padding:9px 16px; }
+  .dec { border-top:1px solid var(--line); padding:10px 0; }
+  .dec:first-child { border-top:0; }
+  .order { font-size:14px; margin:4px 0 0 0; }
+  .order .why { color:var(--quiet); font-size:13px; }
+  .msg { font-size:13px; margin-top:8px; }
+</style>
+</head>
+<body>
+<main>
+  <header><h1>模拟投资</h1><nav><a href="/">问答</a> · <a href="/stock">股票页面</a> · <a href="/digest">每日摘要</a> · <a href="/eval">评测面板 →</a></nav></header>
+  <p class="sub">两个独立账户：你自己下单，AI 每天早上自己决定。都和「开户当天买沪深300 / 标普500 之后不动」比。股票手续费 0.1%，换汇 0.3%。模拟盘，不是真钱。</p>
+
+  <div id="open" class="panel" hidden>
+    <div class="row">
+      <span>起始资金</span><input type="number" id="amount" value="10000" min="100" step="100"><span>元</span>
+      <button id="openBtn">开户</button>
+    </div>
+    <div class="muted" style="margin-top:6px">AI 账户会用同样的金额一起开，方便比较。</div>
+    <div id="openMsg" class="msg"></div>
+  </div>
+
+  <div id="main" hidden>
+    <div class="accounts" id="accounts"></div>
+
+    <h2>收益曲线</h2>
+    <div class="chartbox"><div class="legend" id="legend"></div><svg id="chart" role="img"></svg></div>
+
+    <h2>下单（你的账户）</h2>
+    <div class="panel">
+      <div class="row">
+        <select id="side"><option value="buy">买入</option><option value="sell">卖出</option></select>
+        <input type="text" id="sym" placeholder="名字或代码：英伟达、茅台、澳元、AAPL">
+        <input type="number" id="qty" value="1000" min="1">
+        <span id="unit">元</span>
+        <button id="tradeBtn">下单</button>
+      </div>
+      <div class="muted" style="margin-top:6px">也可以在问答页直接说「用 3000 买英伟达」「卖掉一半澳元」。</div>
+      <div id="tradeMsg" class="msg"></div>
+    </div>
+
+    <h2>AI 每天的决定</h2>
+    <div class="panel">
+      <div class="row" style="margin-bottom:8px"><button id="aiBtn">让 AI 现在决定一次</button><span id="aiMsg" class="muted"></span></div>
+      <div id="decisions"></div>
+    </div>
+  </div>
+</main>
+<script src="/static/common.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const auth = () => { const pw = localStorage.getItem('pw') || ''; return pw ? { Authorization: 'Bearer ' + pw } : {}; };
+const pct = v => `${v > 0 ? '+' : ''}${v}%`;
+const money = v => v.toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+let data;
+
+async function post(url, body) {
+  const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...auth() }, body: body ? JSON.stringify(body) : undefined });
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.detail || '失败');
+  return d;
+}
+
+function account(a, color) {
+  const box = el('div', 'acct'), h = el('h3'), key = el('i');
+  key.style.background = color; h.append(key, a.name);
+  const ret = el('span', a.return_pct >= 0 ? 'up' : 'down', pct(a.return_pct));
+  const big = el('div', 'big', `${money(a.total)} 元 `); big.append(ret);
+  const bench = a.benchmarks.map(b => `${b.name}买了不动 ${pct(b.return_pct)}`).join(' · ');
+  box.append(h, big, el('div', 'muted', `起始 ${money(a.initial_cash)} 元 · 现金 ${money(a.cash)} 元 · ${a.opened} 开户`), el('div', 'muted', bench));
+  const t = el('table'), head = el('tr');
+  head.append(el('th', null, '持仓'), el('th', null, '份数'), el('th', null, '市值（元）'), el('th', null, '盈亏'));
+  t.append(head);
+  for (const x of a.holdings) {
+    const tr = el('tr');
+    tr.append(el('td', null, x.symbol), el('td', 'n', x.quantity), el('td', 'n', money(x.value_cny)),
+              el('td', 'n ' + ((x.pnl_pct ?? 0) >= 0 ? 'up' : 'down'), x.pnl_pct == null ? '—' : pct(x.pnl_pct)));
+    t.append(tr);
+  }
+  if (!a.holdings.length) { const tr = el('tr'); const td = el('td', 'muted', '空仓，全是现金'); td.colSpan = 4; tr.append(td); t.append(tr); }
+  box.append(t);
+  return box;
+}
+
+function draw() {
+  const lines = [];
+  const base = data.user || data.ai;
+  if (data.user) lines.push({ name: '你', color: 'var(--you)', pts: data.user.curve.map(c => [c.day, c.return_pct]) });
+  if (data.ai) lines.push({ name: 'AI', color: 'var(--ai)', pts: data.ai.curve.map(c => [c.day, c.return_pct]) });
+  const dashes = { '000300.SS': '6 4', '^GSPC': '2 3' }, names = { '000300.SS': '沪深300', '^GSPC': '标普500' };
+  for (const code of Object.keys(dashes)) {
+    const pts = base.curve.filter(c => code in c.benchmarks).map(c => [c.day, c.benchmarks[code]]);
+    if (pts.length) lines.push({ name: names[code] + '买了不动', color: 'var(--bench)', dash: dashes[code], pts });
+  }
+  const days = [...new Set(lines.flatMap(l => l.pts.map(p => p[0])))].sort();
+  const svg = $('chart'), W = Math.max(300, svg.clientWidth || 700), H = Math.round(W * 0.42);
+  const m = { l: 48, r: 16, t: 10, b: 24 };
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('aria-label', '收益率曲线：' + lines.map(l => l.name).join('、'));
+  const all = lines.flatMap(l => l.pts.map(p => p[1])).concat([0]);
+  let lo = Math.min(...all), hi = Math.max(...all); const pad = (hi - lo) * 0.1 || 1; lo -= pad; hi += pad;
+  const n = days.length, x = d => m.l + (W - m.l - m.r) * (n > 1 ? days.indexOf(d) / (n - 1) : 0.5);
+  const y = v => m.t + (H - m.t - m.b) * (1 - (v - lo) / (hi - lo));
+  const ns = 'http://www.w3.org/2000/svg';
+  const mk = (tag, attrs, text) => { const e = document.createElementNS(ns, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; return e; };
+  svg.replaceChildren();
+  for (let k = 0; k <= 4; k++) {
+    const v = lo + (hi - lo) * k / 4;
+    const dp = hi - lo < 2 ? 2 : 1, label = (Math.abs(v) < 0.5 * 10 ** -dp ? 0 : v).toFixed(dp) + '%';
+    svg.append(mk('line', { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), stroke: 'var(--grid)' }), mk('text', { x: m.l - 6, y: y(v) + 4, 'text-anchor': 'end' }, label));
+  }
+  svg.append(mk('line', { x1: m.l, x2: W - m.r, y1: y(0), y2: y(0), stroke: 'var(--quiet)', 'stroke-width': 1 }));
+  if (n) [days[0], days[n - 1]].forEach((d, k) => svg.append(mk('text', { x: x(d), y: H - 6, 'text-anchor': n > 1 ? ['start', 'end'][k] : 'middle' }, d)));
+  for (const l of lines) {
+    const attrs = { fill: 'none', stroke: l.color, 'stroke-width': l.dash ? 1.5 : 2.5, 'stroke-linejoin': 'round' };
+    if (l.dash) attrs['stroke-dasharray'] = l.dash;
+    svg.append(mk('path', { ...attrs, d: l.pts.map((p, i) => `${i ? 'L' : 'M'}${x(p[0]).toFixed(1)},${y(p[1]).toFixed(1)}`).join('') }));
+    const last = l.pts[l.pts.length - 1];
+    svg.append(mk('circle', { cx: x(last[0]), cy: y(last[1]), r: 3, fill: l.color }));
+  }
+  $('legend').replaceChildren(...lines.map(l => { const s = el('span'), i = el('i'); i.style.borderColor = l.color; if (l.dash) i.style.borderTopStyle = l.dash === '2 3' ? 'dotted' : 'dashed'; s.append(i, `${l.name} ${pct(l.pts[l.pts.length - 1][1])}`); return s; }));
+  if (n < 2) $('legend').append(el('span', null, '（刚开户，曲线要过几天才会出来）'));
+}
+
+function decisions() {
+  const box = $('decisions');
+  if (!data.decisions.length) { box.replaceChildren(el('div', 'muted', 'AI 还没做过决定。每天早上第一份新闻摘要之后会自动跑，也可以点上面的按钮。')); return; }
+  box.replaceChildren(...data.decisions.map(d => {
+    const row = el('div', 'dec');
+    row.append(el('div', 'muted', `${new Date(d.at).toLocaleString()} · 之后账户 ${money(d.total)} 元（${pct(d.return_pct)}）`), el('div', null, d.summary));
+    if (!d.orders.length) row.append(el('div', 'order muted', '今天不操作'));
+    for (const o of d.orders) {
+      const what = o.action === 'buy' ? `买入 ${o.symbol} ${o.amount_cny} 元` : `卖出 ${o.symbol} ${Math.round(o.fraction * 100)}%`;
+      const line = el('div', 'order');
+      line.append(el('span', o.ok ? 'up' : 'down', o.ok ? '✓ ' : '✗ '), document.createTextNode(what + (o.ok ? '' : `（没做成：${o.error}）`)), el('div', 'why', o.reason));
+      row.append(line);
+    }
+    if (d.research && d.research.length) row.append(el('div', 'muted', '查过：' + d.research.map(c => NAMES[c.name] || c.name).join('、')));
+    return row;
+  }));
+}
+
+async function load() {
+  const r = await fetch('/api/portfolio'); data = await r.json();
+  if (!r.ok) { $('openMsg').textContent = data.detail; $('open').hidden = false; return; }
+  $('open').hidden = !!data.user; $('main').hidden = !data.user && !data.ai;
+  $('accounts').replaceChildren(...[data.user && account(data.user, 'var(--you)'), data.ai && account(data.ai, 'var(--ai)')].filter(Boolean));
+  if (data.user || data.ai) { draw(); decisions(); }
+}
+
+$('side').onchange = () => { const buy = $('side').value === 'buy'; $('unit').textContent = buy ? '元' : '%（卖掉持仓的比例）'; $('qty').value = buy ? 1000 : 100; };
+$('openBtn').onclick = async () => {
+  try { data = await post('/api/portfolio/open', { amount_cny: +$('amount').value }); load(); } catch (e) { $('openMsg').textContent = e.message; }
+};
+$('tradeBtn').onclick = async () => {
+  const buy = $('side').value === 'buy', q = +$('qty').value;
+  $('tradeMsg').textContent = '下单中……';
+  try {
+    await post('/api/portfolio/trade', { action: $('side').value, symbol: $('sym').value, amount_cny: buy ? q : 0, fraction: buy ? 1 : q / 100 });
+    $('tradeMsg').textContent = '成交了'; load();
+  } catch (e) { $('tradeMsg').textContent = e.message; }
+};
+$('aiBtn').onclick = async () => {
+  $('aiBtn').disabled = true; $('aiMsg').textContent = 'AI 正在查数据、做决定……';
+  try { const d = await post('/api/portfolio/ai-run'); $('aiMsg').textContent = d.ok ? '' : d.error; load(); } catch (e) { $('aiMsg').textContent = e.message; }
+  $('aiBtn').disabled = false;
+};
+addEventListener('resize', () => data && (data.user || data.ai) && draw());
+load();
+</script>
+</body>
+</html>

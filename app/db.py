@@ -105,6 +105,54 @@ class Step(Base):
     run: Mapped[Run] = relationship(back_populates="steps")
 
 
+# ---------- 模拟投资 ----------
+
+class Account(Base):
+    """模拟账户。owner=user：用户自己下单；owner=ai：AI 每天自己决定。现金一律是人民币。"""
+    __tablename__ = "accounts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    owner: Mapped[str] = mapped_column(String(8), unique=True)  # user / ai
+    initial_cash: Mapped[float] = mapped_column(Float)
+    cash: Mapped[float] = mapped_column(Float)
+    # 基准：开户当天用同样的钱买入并一直不动，记下买到的份数 {代码: 份数}
+    benchmarks: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class Trade(Base):
+    """一笔成交。price 是标的自己的计价货币，fx 是 1 单位计价货币值多少人民币。"""
+    __tablename__ = "trades"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
+    symbol: Mapped[str] = mapped_column(String(32))
+    side: Mapped[str] = mapped_column(String(4))  # buy / sell
+    quantity: Mapped[float] = mapped_column(Float)
+    price: Mapped[float] = mapped_column(Float)
+    fx: Mapped[float] = mapped_column(Float, default=1.0)
+    amount_cny: Mapped[float] = mapped_column(Float)  # 成交金额（不含手续费）
+    fee_cny: Mapped[float] = mapped_column(Float)
+    reason: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class Snapshot(Base):
+    """某一天两个账户和基准的市值，用来画收益曲线。同一天只留最后一次。"""
+    __tablename__ = "snapshots"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
+    day: Mapped[str] = mapped_column(String(10))
+    value_cny: Mapped[float] = mapped_column(Float)
+    benchmarks: Mapped[dict] = mapped_column(JSON, default=dict)  # {代码: 市值}
+
+
+class AiDecision(Base):
+    """AI 账户每天的一次决定：看法、每笔单子（做成没有、为什么没做）、查过哪些数据。"""
+    __tablename__ = "ai_decisions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    data: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 # ---------- 每日新闻摘要 ----------
 
 class Digest(Base):

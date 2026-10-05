@@ -6,6 +6,7 @@
 
 运行一次：python -m app.digest
 服务里定时运行：设环境变量 DIGEST_TIMES=08:00,23:00（按 TIMEZONE 的当地时间）
+每天第一个时间点的摘要发完后，AI 模拟账户会接着做当天的决定（app/ai_trader.py）
 """
 
 from __future__ import annotations
@@ -256,8 +257,12 @@ def start_background(times: list[str]) -> None:
         while True:
             try:
                 last = last_sent()
-                if due(datetime.now(tz), times, last.astimezone(tz) if last else None):
-                    run_once()
+                now = datetime.now(tz)
+                if due(now, times, last.astimezone(tz) if last else None):
+                    d = run_once()
+                    if due(now, times[:1], last.astimezone(tz) if last else None):  # 每天第一份摘要之后，AI 账户做决定
+                        from . import ai_trader
+                        ai_trader.run_once(d)
             except Exception:
                 log.exception("每日摘要失败")
             time.sleep(60)
