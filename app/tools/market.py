@@ -56,6 +56,30 @@ def fetch_series(symbol: str, days: int = 30) -> list[tuple[str, float]]:
     return pts[-days:]
 
 
+INDEX_FALLBACK = {"000300.SS": ["000001.SS"]}  # Yahoo 的沪深300 数据有时缺很多天，缺了就换上证指数
+
+
+def _series_or_fallback(sym: str, days: int, need: int) -> tuple[str, list[tuple[str, float]], str | None]:
+    """查走势；指数数据不到 need 天时换备用指数（沪深300 → 上证指数）。返回（实际用的代码, 数据, 给模型的说明）。"""
+    try:
+        pts = fetch_series(sym, days)
+    except Exception:
+        if not INDEX_FALLBACK.get(sym):
+            raise
+        pts = []
+    if len(pts) >= need:
+        return sym, pts, None
+    for alt in INDEX_FALLBACK.get(sym, []):
+        try:
+            alt_pts = fetch_series(alt, days)
+        except Exception:
+            continue
+        if len(alt_pts) > len(pts):
+            return alt, alt_pts, (f"{sym} 只查到 {len(pts)} 个交易日，改用走势相近的 {alt}（{INDEXES.get(alt, alt)}）的数据；"
+                                  f"买卖时仍可用 {sym}")
+    return sym, pts, None
+
+
 @tool
 def get_quote(symbol: str) -> str:
     """查一个标的的最新价格。symbol 可以是货币对（AUD/CNY）、Yahoo 股票代码（AAPL、600519.SS、005930.KS）或常见中文名（澳元、茅台）。
@@ -79,7 +103,7 @@ def get_history(symbol: str, days: int = 30) -> str:
     sym = to_code(symbol)
     days = max(5, min(int(days), 365))
     try:
-        pts = fetch_series(sym, days)
+        sym, pts, note = _series_or_fallback(sym, days, need=days // 2)
     except Exception as e:
         return dumps({"ok": False, "error": f"查不到 {sym} 的历史数据：{e}"})
     if len(pts) < 2:
@@ -93,7 +117,7 @@ def get_history(symbol: str, days: int = 30) -> str:
         "change_pct": round((last / prices[0] - 1) * 100, 2),
         "daily_volatility_pct": round(statistics.pstdev(rets) * 100, 3),
         "position_in_range_pct": round((last - min(prices)) / ((max(prices) - min(prices)) or 1) * 100),
-    })
+    } | ({"note": note} if note else {}))
 
 
 @tool
@@ -109,7 +133,7 @@ def find_similar_history(symbol: str, lookback_days: int = 30, horizon_days: int
     h = max(5, min(int(horizon_days), 120))
     years = max(1, min(int(years), 5))
     try:
-        pts = fetch_series(sym, years * 365)
+        sym, pts, swap = _series_or_fallback(sym, years * 365, need=2 * w + h + 10)
     except Exception as e:
         return dumps({"ok": False, "error": f"查不到 {sym} 的历史数据：{e}"})
     p = [x for _, x in pts]
@@ -142,7 +166,7 @@ def find_similar_history(symbol: str, lookback_days: int = 30, horizon_days: int
         out |= {"up_count": up, "up_ratio_pct": round(up / len(fwd) * 100), "avg_forward_pct": round(statistics.mean(fwd), 2),
                 "median_forward_pct": round(statistics.median(fwd), 2), "worst_forward_pct": min(fwd),
                 "best_forward_pct": max(fwd), "recent_examples": [{"date": d, "forward_pct": f} for d, f in matches[-5:]]}
-    out["note"] = ("样本太少，结论不可靠。" if len(fwd) < 8 else "") + "过去的走势不代表未来。"
+    out["note"] = ((swap + "。") if swap else "") + ("样本太少，结论不可靠。" if len(fwd) < 8 else "") + "过去的走势不代表未来。"
     return dumps(out)
 
 
@@ -178,9 +202,6 @@ def compare_with_index(symbol: str, days: int = 30) -> str:
     return dumps({"ok": True, "symbol": sym, "index": idx, "index_name": INDEXES[idx], "from": dates[0], "to": dates[-1],
                   "days": len(dates), "stock_change_pct": round(sa, 2), "index_change_pct": round(sb, 2),
                   "excess_pct": round(sa - sb, 2), "daily_correlation": corr})
-
-
-INDEX_FALLBACK = {"000300.SS": ["000001.SS"]}  # Yahoo 的沪深300 数据有时缺很多天，缺了就换上证指数
 
 
 def _index_series(idx: str, days: int, stock_dates: set[str]) -> tuple[str, dict[str, float]]:

@@ -109,3 +109,28 @@ def test_ai_candidates_include_benchmarks_watchlist_and_holdings():
     pf.open_account("ai", 10000, fetch)
     t = pf.buy("ai", "^GSPC", 1000, fetch=fetch)  # 指数本身也能买，按美元计价收换汇费
     assert t.fee_cny == 4.0
+
+
+def test_research_budget_stops_extra_calls():
+    from langchain_core.tools import tool
+
+    @tool
+    def ping(x: int) -> str:
+        """测试用。"""
+        return f"pong {x}"
+
+    [t] = ai_trader.with_budget([ping], limit=2)
+    assert t.invoke({"x": 1}) == "pong 1" and t.invoke({"x": 2}) == "pong 2"
+    assert "已经用完" in t.invoke({"x": 3})
+
+
+def test_index_tools_fall_back_to_shanghai(monkeypatch):
+    import json
+    from app.tools import market
+
+    def fake(sym, days):
+        return [("2026-09-30", 3900.0)] if sym == "000300.SS" else market._fake_series(sym, days)
+
+    monkeypatch.setattr(market, "fetch_series", fake)
+    out = json.loads(market.get_history.invoke({"symbol": "000300.SS", "days": 30}))
+    assert out["ok"] and out["symbol"] == "000001.SS" and "上证" in out["note"]

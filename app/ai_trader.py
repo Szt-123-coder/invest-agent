@@ -19,11 +19,13 @@ from typing import Literal
 
 from langchain.agents import create_agent
 from langchain.agents.structured_output import ToolStrategy
+from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 
 from . import db
 from . import portfolio as pf
 from .config import get_settings
+from .db import dumps
 from .resolve import to_code
 from .tools.market import compare_with_index, fetch_series, find_similar_history, get_history, get_quote
 from .tools.news import search_news
@@ -31,6 +33,7 @@ from .tools.news import search_news
 log = logging.getLogger(__name__)
 MAX_WEIGHT = 0.4  # 单个标的最多占账户总值的 40%
 MAX_ORDERS = 3
+MAX_RESEARCH = 8  # 一次决定最多查 8 次数据，够看几个候选，又不会把额度花光
 
 
 class Order(BaseModel):
@@ -52,12 +55,13 @@ TRADER_PROMPT = """你在管理一个模拟投资账户，目标是长期跑赢�
 
 规则：
 - 先用工具查数据再决定：价格、近 30 天走势、历史相似情形、和大盘比较、新闻。不要凭记忆编数字
+- 一次最多查 {max_research} 次数据，先想好最需要查什么；同样的东西不要重复查
 - 每笔买入股票收 0.1% 手续费，外币资产还要再收 0.3% 换汇费；频繁买卖会被手续费吃掉，没有把握就不动
 - 单个标的买完后不能超过账户总值的 40%，一天最多 3 笔
 - 候选标的见下方「今天的候选」：两个大盘指数本身也能买（相当于买指数基金），所以「买大盘拿着」也是一个选项；也可以买你研究过、觉得更好的其他标的
-- 只看汇率很难跑赢股票大盘：大盘在涨时，一直拿现金也会落后于基准
+- 拿现金也是一种选择：大盘在涨时，现金会落后于基准；但没有把握时不动，比为了操作而操作更好。买不买都要有数据支持
 - 理由要具体，写出你依据的数字或新闻；之后会有人对照结果复盘你的理由
-- 最后调用 Decision 交出决定"""
+- 最后调用 Decision 交出决定""".format(max_research=MAX_RESEARCH)
 
 
 def candidates(state: dict, watch: list[str]) -> list[str]:
@@ -78,14 +82,28 @@ def _state_text(state: dict, watch: list[str], digest: dict | None) -> str:
     return "\n\n".join(parts)
 
 
+def with_budget(tools: list, limit: int = MAX_RESEARCH) -> list:
+    """给一组工具加一个共用的次数上限。用完以后工具不再查，只提醒模型用已有数据交出决定。"""
+    used = [0]
+
+    def wrap(t):
+        def run(**kwargs):
+            if used[0] >= limit:
+                return dumps({"ok": False, "error": f"这次的 {limit} 次查询已经用完，请根据已经查到的数据调用 Decision 交出决定"})
+            used[0] += 1
+            return t.invoke(kwargs)
+        return StructuredTool.from_function(func=run, name=t.name, description=t.description, args_schema=t.args_schema)
+
+    return [wrap(t) for t in tools]
+
+
 def llm_decide(state_text: str) -> tuple[Decision | None, list[dict]]:
     """让 agent 研究并给出决定。返回（决定，调用过的工具）。"""
     from .llm import get_model
 
-    agent = create_agent(get_model(), tools=[get_quote, get_history, find_similar_history, compare_with_index,
-                                             search_news],
-                         system_prompt=TRADER_PROMPT, response_format=ToolStrategy(Decision))
-    result = agent.invoke({"messages": [{"role": "user", "content": state_text}]})
+    tools = with_budget([get_quote, get_history, find_similar_history, compare_with_index, search_news])
+    agent = create_agent(get_model(), tools=tools, system_prompt=TRADER_PROMPT, response_format=ToolStrategy(Decision))
+    result = agent.invoke({"messages": [{"role": "user", "content": state_text}]}, {"recursion_limit": 40})
     calls = [{"name": c["name"], "args": c["args"]} for m in result["messages"]
              for c in getattr(m, "tool_calls", []) or [] if c["name"] != Decision.__name__]
     return result.get("structured_response"), calls
