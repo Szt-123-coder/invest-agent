@@ -69,14 +69,15 @@ def set_move_alert(symbol: str, direction: str = "down", step_pct: float = 0.2) 
 
 @tool
 def list_alerts() -> str:
-    """列出所有提醒和关注的标的。"""
+    """列出所有提醒、关注的标的和关注的话题。"""
     with db.session() as s:
         alerts = s.scalars(select(db.Alert).order_by(db.Alert.id)).all()
         watch = s.scalars(select(db.WatchItem).order_by(db.WatchItem.id)).all()
+        topics = s.scalars(select(db.WatchTopic.topic).order_by(db.WatchTopic.id)).all()
         return dumps({"ok": True,
                       "alerts": [{"id": a.id, "symbol": a.symbol, "kind": a.kind, "direction": a.direction,
                                   "target": a.target, "step_pct": a.step} for a in alerts],
-                      "watchlist": [w.symbol for w in watch]})
+                      "watchlist": [w.symbol for w in watch], "topics": list(topics)})
 
 
 @tool
@@ -105,6 +106,25 @@ def watch(symbol: str, remove: bool = False) -> str:
             s.add(db.WatchItem(symbol=sym))
         s.commit()
         return dumps({"ok": True, "symbol": sym, "watching": not remove})
+
+
+@tool
+def watch_topic(topic: str, remove: bool = False) -> str:
+    """关注（remove=false）或取消关注（remove=true）一个新闻话题，比如「澳洲联储利率」「AI 芯片出口管制」。
+    每日新闻摘要会单独搜这个话题，并判断它影响用户关注的哪个标的。具体的币或股票请用 watch，不要用这个。"""
+    t = topic.strip()
+    if not t or len(t) > 30:
+        return _fail("话题不能为空，也不要超过 30 个字")
+    with db.session() as s:
+        item = s.scalar(select(db.WatchTopic).where(db.WatchTopic.topic == t))
+        if remove:
+            if not item:
+                return _fail(f"本来就没有关注话题「{t}」")
+            s.delete(item)
+        elif not item:
+            s.add(db.WatchTopic(topic=t))
+        s.commit()
+        return dumps({"ok": True, "topic": t, "watching": not remove})
 
 
 @tool

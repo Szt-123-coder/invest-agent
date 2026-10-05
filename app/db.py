@@ -30,6 +30,14 @@ class WatchItem(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class WatchTopic(Base):
+    """关注的话题，比如「澳洲联储利率」。每日摘要会单独搜，再由模型判断影响哪个关注的标的。"""
+    __tablename__ = "watch_topics"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    topic: Mapped[str] = mapped_column(String(64), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class Alert(Base):
     """提醒。kind=price：到某个价位；kind=move：从高点/低点变动超过 step 百分比。"""
     __tablename__ = "alerts"

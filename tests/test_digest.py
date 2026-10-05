@@ -74,3 +74,31 @@ def test_digest_api(monkeypatch):
     assert r.status_code == 200 and r.json()["pushed"] is False
     assert len(c.get("/api/digest").json()) == 1
     assert c.get("/digest").status_code == 200
+
+
+def test_topic_news_is_mapped_to_watched_symbols_by_the_model():
+    by_query = {"澳洲联储利率": [{"title": "澳洲联储加息至 4.6%", "source": "https://a.example/rba", "snippet": "…"},
+                                 {"title": "澳洲房价上涨", "source": "https://a.example/house", "snippet": "…"}]}
+
+    def news(query, n, days=7):
+        return by_query.get(query, [])
+
+    def extract(prompt):
+        assert "用户关注的话题：澳洲联储利率" in prompt and "1：［话题：澳洲联储利率］澳洲联储加息" in prompt
+        return Extraction(overview="x", items=[
+            NewsImpact(news_id=1, symbol="AUD/CNY", what="澳洲联储加息", direction="偏涨", reason="利差扩大")])
+
+    d = digest.build(["AUD/CNY"], extract=extract, news_fn=news, topics=["澳洲联储利率"])
+    assert d["items"][0]["topic"] == "澳洲联储利率"
+    assert d["topics"] == [{"topic": "澳洲联储利率", "other": [{"title": "澳洲房价上涨", "url": "https://a.example/house"}]}]
+    text = digest.to_markdown(d)
+    assert "［话题：澳洲联储利率］澳洲联储加息" in text and "对你关注的标的没有明显影响" in text
+
+
+def test_watch_topic_tool_via_agent():
+    from app.agent import ask
+
+    r = ask("帮我关注澳洲联储利率的新闻")
+    assert [s["name"] for s in r["steps"] if s["type"] == "tool_call"] == ["watch_topic"]
+    assert digest.watched_topics() == ["澳洲联储利率"]
+    assert r["structured"]["actions"][0]["ok"]

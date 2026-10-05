@@ -91,6 +91,9 @@ class DemoModel(BaseChatModel):
                 return [("set_price_alert", {"symbol": syms[0], "target": float(num.group()), "direction": d})]
             return [("set_move_alert", {"symbol": syms[0], "direction": direction,
                                          "step_pct": float(pct.group(1)) if pct else 0.2})]
+        topic = re.search(r"(?:关注|留意)(?:一下)?(.+?)(?:的)?(?:新闻|话题|消息)", q)
+        if topic and not syms:
+            return [("watch_topic", {"topic": topic.group(1).strip("「」 "), "remove": "取消" in q})]
         if re.search(r"取消关注", q) and syms:
             return [("watch", {"symbol": syms[0], "remove": True})]
         if re.search(r"关注", q) and syms:
@@ -161,7 +164,7 @@ class DemoModel(BaseChatModel):
 
 
 WRITE_TOOLS = {"set_price_alert": "设置价位提醒", "set_move_alert": "设置波动提醒", "delete_alert": "删除提醒",
-               "watch": "修改关注", "remember_preference": "记住偏好"}
+               "watch": "修改关注", "watch_topic": "修改关注话题", "remember_preference": "记住偏好"}
 
 
 def _write_detail(data: dict) -> str:
@@ -172,6 +175,8 @@ def _write_detail(data: dict) -> str:
         return f"提醒 #{data['alert_id']}：{data['symbol']} {what}时通知你"
     if "deleted" in data:
         return f"提醒 #{data['deleted']} 已删除"
+    if "topic" in data:
+        return f"话题「{data['topic']}」已{'加入' if data['watching'] else '移出'}关注"
     if "watching" in data:
         return f"{data['symbol']} 已{'加入' if data['watching'] else '移出'}关注"
     return "已记住"

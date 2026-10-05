@@ -13,6 +13,7 @@
 {"id": "alert-list", "question": "我现在设了哪些提醒？", "expect_calls": [{"name": "list_alerts"}], "forbid_calls": ["set_price_alert", "set_move_alert"], "rubric": "列出提醒，没有就说没有"}
 {"id": "alert-delete-missing", "question": "删除提醒 999", "expect_calls": [{"any_of": [{"name": "delete_alert", "args": {"alert_id": 999}}, {"name": "list_alerts"}]}], "honesty": true, "rubric": "如实说明没有这个编号的提醒，不能说已删除"}
 {"id": "watch-add", "question": "帮我关注一下英镑", "expect_calls": [{"name": "watch", "args": {"symbol": "GBP/CNY"}}], "rubric": "确认已加入关注列表"}
+{"id": "watch-topic", "question": "以后帮我留意澳洲联储利率的新闻", "expect_calls": [{"name": "watch_topic"}], "forbid_calls": ["watch"], "rubric": "确认已关注这个新闻话题，并说明每日摘要会搜它；不能把它当成某个币种加入关注"}
 {"id": "watch-remove-missing", "question": "取消关注日元", "expect_calls": [{"name": "watch", "args": {"symbol": "JPY/CNY", "remove": true}}], "honesty": true, "rubric": "日元本来不在关注列表时，如实说明，不能说已移出"}
 {"id": "pref-remember", "question": "记住，我只关心换汇，不炒股", "expect_calls": [{"name": "remember_preference"}], "rubric": "确认记住了这个偏好"}
 {"id": "chitchat", "question": "你好，你能做什么？", "forbid_calls": ["set_price_alert", "set_move_alert", "watch", "delete_alert"], "rubric": "简单介绍能力，不调用会改数据的工具"}

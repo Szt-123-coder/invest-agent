@@ -1,4 +1,4 @@
-"""每日新闻摘要：给关注的每个标的搜新闻，让模型提炼「发生了什么、影响谁、偏涨还是偏跌」，核对后推送到微信。
+"""每日新闻摘要：给关注的每个标的和话题搜新闻，让模型提炼「发生了什么、影响谁、偏涨还是偏跌」，核对后推送到微信。
 
 这里没有用 agent，而是固定流程（workflow）：搜新闻 → 模型提炼 → 代码核对 → 推送。
 步骤每天都一样，不需要模型自己决定下一步，固定流程更便宜、更稳定，也更好评测。
@@ -47,18 +47,19 @@ class Extraction(BaseModel):
     overview: str = Field(description="两三句话的今日总览，只根据下面的新闻和价格")
 
 
-EXTRACT_PROMPT = """你在给用户写每日新闻摘要。用户关注：{symbols}。
+EXTRACT_PROMPT = """你在给用户写每日新闻摘要。用户关注的标的：{symbols}。用户关注的话题：{topics}。
 
 今天的价格：
 {prices}
 
-搜到的新闻（编号：标题｜摘要）：
+搜到的新闻（编号：标题｜摘要；标着「话题」的是按话题搜到的）：
 {news}
 
 请逐条判断：这条新闻和哪个关注标的有关、发生了什么、让它偏涨还是偏跌。
 规则：
 - news_id 只能用上面的编号，symbol 只能用关注列表里的代码
 - 一条新闻影响多个标的，就分成多项
+- 按话题搜到的新闻，同样要判断它影响哪个关注的标的；对所有关注的标的都没有明显影响，就不要填
 - 和关注标的无关、或者只是重复别的新闻的，不要填
 - 只写新闻里有的事实，不要补充新闻里没有的数字
 - 方向拿不准就填「看不出」，不要硬猜"""
@@ -126,7 +127,7 @@ def check(ex: Extraction, news: list[dict], symbols: list[str]) -> tuple[list[di
         else:
             seen.add((it.news_id, it.symbol))
             n = by_id[it.news_id]
-            kept.append({**it.model_dump(), "title": n["title"], "url": n["source"]})
+            kept.append({**it.model_dump(), "title": n["title"], "url": n["source"], "topic": n.get("topic", "")})
     return kept, dropped
 
 
@@ -139,29 +140,36 @@ def _price(symbol: str, fetch) -> dict:
         return {"symbol": symbol, "error": str(e)}
 
 
+def watched_topics() -> list[str]:
+    with db.session() as s:
+        return list(s.scalars(select(db.WatchTopic.topic).order_by(db.WatchTopic.id)))
+
+
 def watched_symbols() -> list[str]:
     with db.session() as s:
         return list(s.scalars(select(db.WatchItem.symbol).order_by(db.WatchItem.id))) or DEFAULT_SYMBOLS
 
 
 def build(symbols: list[str] | None = None, extract: Extractor | None = None,
-          news_fn=fetch_news, fetch=fetch_series, per_symbol: int = 4) -> dict:
+          news_fn=fetch_news, fetch=fetch_series, per_symbol: int = 4, topics: list[str] | None = None) -> dict:
     """生成一份摘要（不推送）。extract 为 None 时：有真模型就用模型，否则用演示规则。"""
     symbols = symbols or watched_symbols()
+    topics = watched_topics() if topics is None else topics
     prices = [_price(sym, fetch) for sym in symbols]
     news, urls, errors = [], set(), []
-    for sym in symbols:
+    searches = [(sym, query_for(sym), "") for sym in symbols] + [(t, t, t) for t in topics]
+    for label, query, topic in searches:
         try:
-            found = news_fn(query_for(sym), per_symbol, days=2)
+            found = news_fn(query, per_symbol, days=2)
         except Exception as e:
-            errors.append(f"{sym} 新闻搜索失败：{e}")
+            errors.append(f"{label} 新闻搜索失败：{e}")
             continue
         for n in found:
             key = n["source"] if n.get("source", "").startswith("http") else n.get("title")
             if key in urls:  # 不同标的搜到同一条新闻，只留一份，让模型自己判断影响谁
                 continue
             urls.add(key)
-            news.append({**n, "id": len(news) + 1, "symbol": sym})
+            news.append({**n, "id": len(news) + 1, "topic": topic})
     extract = extract or llm_extractor()
     if not news:
         ex = Extraction(overview="今天没有搜到相关新闻。")
@@ -170,16 +178,28 @@ def build(symbols: list[str] | None = None, extract: Extractor | None = None,
     else:
         price_text = "\n".join(f"- {p['symbol']}：{p['price']}（{p['change_pct']:+}%）" if "price" in p
                                else f"- {p['symbol']}：查不到" for p in prices)
-        news_text = "\n".join(f"{n['id']}：{n['title']}｜{n['snippet']}" for n in news)
-        ex = extract(EXTRACT_PROMPT.format(symbols="、".join(symbols), prices=price_text, news=news_text))
+        news_text = "\n".join(f"{n['id']}：{'［话题：' + n['topic'] + '］' if n['topic'] else ''}{n['title']}｜{n['snippet']}"
+                              for n in news)
+        ex = extract(EXTRACT_PROMPT.format(symbols="、".join(symbols), topics="、".join(topics) or "无",
+                                           prices=price_text, news=news_text))
     items, dropped = check(ex, news, symbols)
+    used = {i["news_id"] for i in items}
+    # 话题新闻里，模型判断对关注的标的都没影响的，也列出标题，让用户知道搜过、没漏
+    topic_rows = [{"topic": t, "other": [{"title": n["title"], "url": n["source"]} for n in news
+                                         if n["topic"] == t and n["id"] not in used]} for t in topics]
     tz = ZoneInfo(get_settings().timezone)
     return {"date": datetime.now(tz).strftime("%Y-%m-%d %H:%M"), "symbols": symbols, "prices": prices,
-            "overview": ex.overview, "items": items, "dropped": dropped, "errors": errors,
+            "overview": ex.overview, "items": items, "topics": topic_rows, "dropped": dropped, "errors": errors,
             "news_count": len(news), "demo": extract is None, "default_symbols": symbols == DEFAULT_SYMBOLS}
 
 
 ARROW = {"偏涨": "↑", "偏跌": "↓", "看不出": "·"}
+
+
+def _line(i: dict) -> str:
+    tag = f"［话题：{i['topic']}］" if i.get("topic") else ""
+    link = f" [原文]({i['url']})" if i["url"].startswith("http") else ""
+    return f"- {ARROW[i['direction']]} {i['direction']}｜{tag}{i['what']}（{i['reason']}）{link}"
 
 
 def to_markdown(d: dict) -> str:
@@ -191,9 +211,11 @@ def to_markdown(d: dict) -> str:
     for sym in d["symbols"]:
         its = [i for i in d["items"] if i["symbol"] == sym]
         lines += ["", f"### {display_name(sym)}"]
-        lines += [f"- {ARROW[i['direction']]} {i['direction']}｜{i['what']}（{i['reason']}）[原文]({i['url']})"
-                  if i["url"].startswith("http") else f"- {ARROW[i['direction']]} {i['direction']}｜{i['what']}（{i['reason']}）"
-                  for i in its] or ["- 没有相关新闻"]
+        lines += [_line(i) for i in its] or ["- 没有相关新闻"]
+    for t in d.get("topics", []):
+        if t["other"]:
+            lines += ["", f"### 话题：{t['topic']}（对你关注的标的没有明显影响）"]
+            lines += [f"- [{n['title']}]({n['url']})" if n["url"].startswith("http") else f"- {n['title']}" for n in t["other"]]
     lines += ["", "仅供学习参考，不构成投资建议。"]
     return "\n".join(lines)
 

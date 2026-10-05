@@ -16,6 +16,7 @@
   .dir { flex:none; width:44px; font-weight:600; }
   .d-偏涨 { color:var(--good); } .d-偏跌 { color:var(--bad); } .d-看不出 { color:var(--quiet); }
   .why { color:var(--quiet); font-size:13px; }
+  .tag { display:inline-block; font-size:12px; color:var(--accent); border:1px solid var(--line); border-radius:6px; padding:0 6px; margin-right:6px; }
   .note { color:var(--quiet); font-size:13px; margin-top:8px; }
   .bar { display:flex; gap:8px; align-items:center; margin-bottom:20px; flex-wrap:wrap; }
   .bar button { padding:8px 16px; }
@@ -25,7 +26,7 @@
 <body>
 <main>
   <header><h1>每日新闻摘要</h1><nav><a href="/">问答</a> · <a href="/stock">股票页面</a> · <a href="/eval">评测面板 →</a></nav></header>
-  <p class="sub">每天定时给关注的标的搜新闻，模型提炼「发生了什么、偏涨还是偏跌」，代码核对后推送到微信。方向只是模型对新闻的解读，不是预测。</p>
+  <p class="sub">每天定时给关注的标的和话题搜新闻，模型提炼「发生了什么、偏涨还是偏跌」，代码核对后推送到微信。方向只是模型对新闻的解读，不是预测。</p>
   <div class="bar">
     <button id="run">现在生成一份</button>
     <label><input type="checkbox" id="push"> 同时推送到微信</label>
@@ -51,8 +52,18 @@ function render(d) {
       const row = el('div', 'item'), body = el('div');
       row.append(el('span', 'dir d-' + i.direction, i.direction));
       const what = i.url.startsWith('http') ? Object.assign(el('a', null, i.what), { href: i.url, target: '_blank', rel: 'noopener' }) : el('span', null, i.what);
+      if (i.topic) body.append(el('span', 'tag', '话题：' + i.topic));
       body.append(what, el('div', 'why', i.reason));
       row.append(body); box.append(row);
+    }
+  }
+  for (const t of d.topics || []) {
+    if (!t.other.length) continue;
+    box.append(el('h3', null, `话题：${t.topic}`), el('div', 'why', '下面这些新闻，模型判断对你关注的标的没有明显影响'));
+    for (const n of t.other) {
+      const row = el('div', 'item');
+      row.append(n.url.startsWith('http') ? Object.assign(el('a', null, n.title), { href: n.url, target: '_blank', rel: 'noopener' }) : el('span', null, n.title));
+      box.append(row);
     }
   }
   const notes = [];
