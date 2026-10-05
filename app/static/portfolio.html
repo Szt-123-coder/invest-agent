@@ -167,7 +167,10 @@ function decisions() {
       line.append(el('span', o.ok ? 'up' : 'down', o.ok ? '✓ ' : '✗ '), document.createTextNode(what + (o.ok ? '' : `（没做成：${o.error}）`)), el('div', 'why', o.reason));
       row.append(line);
     }
-    if (d.research && d.research.length) row.append(el('div', 'muted', '查过：' + d.research.map(c => NAMES[c.name] || c.name).join('、')));
+    if (d.research && d.research.length) {   // 同一个工具查了几次就写「×2」，不重复列出
+      const count = new Map(); d.research.forEach(c => count.set(c.name, (count.get(c.name) || 0) + 1));
+      row.append(el('div', 'muted', `查了 ${d.research.length} 次数据：` + [...count].map(([n, k]) => (NAMES[n] || n) + (k > 1 ? ` ×${k}` : '')).join('、')));
+    }
     return row;
   }));
 }
