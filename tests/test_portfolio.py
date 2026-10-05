@@ -101,3 +101,11 @@ def test_portfolio_api(monkeypatch):
     assert r["ok"] and "演示模式" in r["summary"]
     assert len(c.get("/api/portfolio").json()["decisions"]) == 1
     assert c.get("/portfolio").status_code == 200
+
+
+def test_ai_candidates_include_benchmarks_watchlist_and_holdings():
+    state = {"holdings": [{"symbol": "TSLA"}]}
+    assert ai_trader.candidates(state, ["USD/CNY", "NVDA"]) == ["000300.SS", "^GSPC", "USD/CNY", "NVDA", "TSLA"]
+    pf.open_account("ai", 10000, fetch)
+    t = pf.buy("ai", "^GSPC", 1000, fetch=fetch)  # 指数本身也能买，按美元计价收换汇费
+    assert t.fee_cny == 4.0

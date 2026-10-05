@@ -54,9 +54,16 @@ TRADER_PROMPT = """你在管理一个模拟投资账户，目标是长期跑赢�
 - 先用工具查数据再决定：价格、近 30 天走势、历史相似情形、和大盘比较、新闻。不要凭记忆编数字
 - 每笔买入股票收 0.1% 手续费，外币资产还要再收 0.3% 换汇费；频繁买卖会被手续费吃掉，没有把握就不动
 - 单个标的买完后不能超过账户总值的 40%，一天最多 3 笔
-- 可以买关注列表里的标的，也可以买你研究过、觉得更好的标的
+- 候选标的见下方「今天的候选」：两个大盘指数本身也能买（相当于买指数基金），所以「买大盘拿着」也是一个选项；也可以买你研究过、觉得更好的其他标的
+- 只看汇率很难跑赢股票大盘：大盘在涨时，一直拿现金也会落后于基准
 - 理由要具体，写出你依据的数字或新闻；之后会有人对照结果复盘你的理由
 - 最后调用 Decision 交出决定"""
+
+
+def candidates(state: dict, watch: list[str]) -> list[str]:
+    """AI 每天的候选：两个基准指数 + 关注列表 + 已经持有的，去重后保持顺序。"""
+    held = [h["symbol"] for h in state["holdings"]]
+    return list(dict.fromkeys([*pf.BENCHMARKS, *watch, *held]))
 
 
 def _state_text(state: dict, watch: list[str], digest: dict | None) -> str:
@@ -64,7 +71,7 @@ def _state_text(state: dict, watch: list[str], digest: dict | None) -> str:
                          for h in state["holdings"]) or "（空仓）"
     bench = "、".join(f"{b['name']} {b['return_pct']:+}%" for b in state["benchmarks"])
     parts = [f"账户：现金 {state['cash']} 元，总值 {state['total']} 元，起始 {state['initial_cash']} 元，"
-             f"收益 {state['return_pct']:+}%（同期 {bench}）", f"持仓：\n{holdings}", f"关注列表：{'、'.join(watch)}"]
+             f"收益 {state['return_pct']:+}%（同期 {bench}）", f"持仓：\n{holdings}", f"今天的候选：{'、'.join(f'{c}（{pf.BENCHMARKS[c]}）' if c in pf.BENCHMARKS else c for c in candidates(state, watch))}"]
     if digest:
         lines = [f"- {i['symbol']} {i['direction']}：{i['what']}（{i['reason']}）" for i in digest.get("items", [])]
         parts.append(f"今天的新闻摘要：{digest.get('overview', '')}\n" + "\n".join(lines))
