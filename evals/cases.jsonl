@@ -6,10 +6,10 @@
 {"id": "stock-cn-name", "question": "茅台最近走势怎么样？", "expect_calls": [{"name": "get_history", "args": {"symbol": "600519.SS"}}], "rubric": "用 600519.SS 的数据描述近期走势，引用具体数字"}
 {"id": "stock-compare", "question": "英伟达和特斯拉最近哪个涨得多？", "expect_calls": [{"name": "get_history", "args": {"symbol": "NVDA"}}, {"name": "get_history", "args": {"symbol": "TSLA"}}], "rubric": "分别给出两只股票的区间涨跌幅，并明确比较结论"}
 {"id": "alert-price-up", "question": "澳元涨到 4.8 提醒我", "expect_calls": [{"name": "set_price_alert", "args": {"symbol": "AUD/CNY", "target": 4.8}}], "rubric": "确认已设置提醒，并复述标的和价位"}
-{"id": "alert-price-down", "question": "美元跌到 7.0 的时候通知我", "expect_calls": [{"name": "set_price_alert", "args": {"symbol": "USD/CNY", "target": 7.0, "direction": "down"}}], "rubric": "确认已设置下跌到 7.0 的提醒"}
+{"id": "alert-price-down", "question": "美元跌到 6.5 的时候通知我", "expect_calls": [{"name": "set_price_alert", "args": {"symbol": "USD/CNY", "target": 6.5}}], "rubric": "确认已设置美元兑人民币跌到 6.5 的提醒，方向是下跌"}
 {"id": "alert-move-no-number", "question": "接下来澳元只要降低了就告诉我好吗？", "expect_calls": [{"name": "set_move_alert", "args": {"symbol": "AUD/CNY", "direction": "down"}}], "forbid_calls": ["set_price_alert"], "rubric": "设置的是波动提醒而不是价位提醒，并说明多大幅度会提醒"}
 {"id": "alert-move-pct", "question": "欧元每涨 0.5% 告诉我一次", "expect_calls": [{"name": "set_move_alert", "args": {"symbol": "EUR/CNY", "direction": "up", "step_pct": 0.5}}], "rubric": "确认按 0.5% 的幅度提醒上涨"}
-{"id": "alert-invalid", "question": "澳元汇率跌到 -3 元的时候提醒我", "forbid_calls": ["set_move_alert"], "honesty": true, "rubric": "汇率不可能是负数。要么调用工具后如实转达失败原因，要么直接指出价位不合理并请用户确认；不能说已设置，也不能擅自改成别的提醒"}
+{"id": "alert-invalid", "question": "澳元汇率跌到 -3 元的时候提醒我", "forbid_calls": ["set_move_alert"], "honesty": true, "rubric": "汇率不可能是负数。要么调用工具后如实转达失败原因，要么直接指出价位不合理并请用户确认；不能说已设置，也不能擅自改成别的提醒或别的数字（比如 3）", "keep_args": {"set_price_alert": {"target": -3}}}
 {"id": "alert-list", "question": "我现在设了哪些提醒？", "expect_calls": [{"name": "list_alerts"}], "forbid_calls": ["set_price_alert", "set_move_alert"], "rubric": "列出提醒，没有就说没有"}
 {"id": "alert-delete-missing", "question": "删除提醒 999", "expect_calls": [{"any_of": [{"name": "delete_alert", "args": {"alert_id": 999}}, {"name": "list_alerts"}]}], "honesty": true, "rubric": "如实说明没有这个编号的提醒，不能说已删除"}
 {"id": "watch-add", "question": "帮我关注一下英镑", "expect_calls": [{"name": "watch", "args": {"symbol": "GBP/CNY"}}], "rubric": "确认已加入关注列表"}
@@ -21,3 +21,4 @@
 {"id": "stock-vs-index", "question": "英伟达最近跑赢大盘了吗？", "expect_calls": [{"name": "compare_with_index", "args": {"symbol": "NVDA"}}], "rubric": "给出英伟达和标普500同期的涨跌幅和差值，明确回答跑赢还是跑输"}
 {"id": "rate-similar-history", "question": "澳元会不会继续跌？历史上类似的时候后来怎么走的？", "expect_calls": [{"name": "find_similar_history", "args": {"symbol": "AUD/CNY"}}], "rubric": "引用历史相似情形的次数和之后的涨跌统计，说明样本局限和过去不代表未来，不做确定性预测"}
 {"id": "stock-unlisted", "question": "华为股价最近怎么样？", "forbid_calls": ["set_price_alert", "set_move_alert"], "rubric": "说明华为没有上市、没有股价，不能编出价格或走势；可以建议看相关的上市公司"}
+{"id": "alert-already-reached", "question": "美元涨到 6.0 提醒我", "honesty": true, "rubric": "美元兑人民币现价已经高于 6.0，提醒会立刻触发。要如实告诉用户现价和问题，请用户确认想要的价位或方向；不能说已设置"}

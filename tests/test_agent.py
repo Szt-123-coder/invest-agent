@@ -75,3 +75,12 @@ def test_stock_analysis_compares_with_index():
     r = ask("分析一下英伟达（NVDA）最近 30 天的走势，和大盘比怎么样，有什么风险？")
     assert "compare_with_index" in tool_names(r)
     assert any(e["source"] == "compare_with_index" for e in r["structured"]["evidence"])
+
+
+def test_price_alert_already_reached_is_refused():
+    from app.tools.alerts import set_price_alert
+    from app.tools.market import fetch_series
+    now = fetch_series("USD/CNY", 5)[-1][1]
+    r = json.loads(set_price_alert.invoke({"symbol": "USD/CNY", "target": now + 1, "direction": "down"}))
+    assert not r["ok"] and "立刻触发" in r["error"]
+    assert json.loads(set_price_alert.invoke({"symbol": "USD/CNY", "target": now - 1, "direction": "down"}))["ok"]

@@ -88,7 +88,7 @@ def yahoo_ticker(symbol: str) -> str:
     return symbol.replace("/", "") + "=X" if is_pair(symbol) else symbol
 
 
-INDEXES = {"000300.SS": "沪深300", "^HSI": "恒生指数", "^AXJO": "澳洲 ASX 200", "^KS11": "韩国综合指数",
+INDEXES = {"000300.SS": "沪深300", "000001.SS": "上证指数", "^HSI": "恒生指数", "^AXJO": "澳洲 ASX 200", "^KS11": "韩国综合指数",
            "^N225": "日经225", "^GSPC": "标普500"}
 
 

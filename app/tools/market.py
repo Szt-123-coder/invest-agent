@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import math
 import statistics
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import httpx
 from langchain_core.tools import tool
@@ -24,7 +24,7 @@ def _fake_series(symbol: str, days: int) -> list[tuple[str, float]]:
     第 k 天前的价格只和 k 有关，所以查 30 天和查 3 年看到的是同一条走势的不同长度。
     """
     seed = int(hashlib.md5(symbol.encode()).hexdigest()[:8], 16)
-    base = {"AUD/CNY": 4.62, "USD/CNY": 7.12, "EUR/CNY": 7.75, "^GSPC": 5800, "000300.SS": 3900, "^HSI": 21000,
+    base = {"AUD/CNY": 4.62, "USD/CNY": 7.12, "EUR/CNY": 7.75, "^GSPC": 5800, "000300.SS": 3900, "000001.SS": 3300, "^HSI": 21000,
             "^AXJO": 8200, "^KS11": 2600, "^N225": 38000}.get(symbol, 50 + seed % 300)
     today = date(2026, 10, 2)
     out = []
@@ -49,7 +49,10 @@ def fetch_series(symbol: str, days: int = 30) -> list[tuple[str, float]]:
     r.raise_for_status()
     res = r.json()["chart"]["result"][0]
     closes = res["indicators"]["quote"][0]["close"]
-    pts = [(date.fromtimestamp(t).isoformat(), round(c, 4)) for t, c in zip(res["timestamp"], closes) if c is not None]
+    # 按交易所当地时间算日期，不按运行这台电脑的时区，否则不同市场对不上日子
+    offset = res.get("meta", {}).get("gmtoffset", 0)
+    pts = [(datetime.fromtimestamp(t + offset, timezone.utc).date().isoformat(), round(c, 4))
+           for t, c in zip(res["timestamp"], closes) if c is not None]
     return pts[-days:]
 
 
@@ -156,12 +159,14 @@ def compare_with_index(symbol: str, days: int = 30) -> str:
         return dumps({"ok": False, "error": f"{sym} 不是股票，没有对应的大盘指数"})
     days = max(5, min(int(days), 365))
     try:
-        a, b = dict(fetch_series(sym, days)), dict(fetch_series(idx, days))
+        a = dict(fetch_series(sym, days))
+        idx, b = _index_series(idx, days, set(a))
     except Exception as e:
         return dumps({"ok": False, "error": f"查不到 {sym} 或大盘的数据：{e}"})
     dates = sorted(set(a) & set(b))  # 两个市场休市日不同，只比较都开盘的日子
     if len(dates) < 5:
-        return dumps({"ok": False, "error": f"{sym} 和大盘共同的交易日太少"})
+        return dumps({"ok": False, "error": f"{sym} 和大盘共同的交易日太少：股票 {len(a)} 天，{INDEXES[idx]} {len(b)} 天，"
+                                            f"重合 {len(dates)} 天"})
     pa, pb = [a[d] for d in dates], [b[d] for d in dates]
     ra = [y / x - 1 for x, y in zip(pa, pa[1:])]
     rb = [y / x - 1 for x, y in zip(pb, pb[1:])]
@@ -173,6 +178,24 @@ def compare_with_index(symbol: str, days: int = 30) -> str:
     return dumps({"ok": True, "symbol": sym, "index": idx, "index_name": INDEXES[idx], "from": dates[0], "to": dates[-1],
                   "days": len(dates), "stock_change_pct": round(sa, 2), "index_change_pct": round(sb, 2),
                   "excess_pct": round(sa - sb, 2), "daily_correlation": corr})
+
+
+INDEX_FALLBACK = {"000300.SS": ["000001.SS"]}  # Yahoo 的沪深300 数据有时缺很多天，缺了就换上证指数
+
+
+def _index_series(idx: str, days: int, stock_dates: set[str]) -> tuple[str, dict[str, float]]:
+    """查大盘；和股票重合的交易日不到一半时，换备用指数。返回（实际用的指数, 日期→点位）。"""
+    best = (idx, {})
+    for code in [idx, *INDEX_FALLBACK.get(idx, [])]:
+        try:
+            b = dict(fetch_series(code, days))
+        except Exception:
+            continue
+        if len(stock_dates & set(b)) * 2 >= len(stock_dates):
+            return code, b
+        if len(b) > len(best[1]):
+            best = (code, b)
+    return best
 
 
 def series_overview(symbol: str, days: int = 30) -> dict:
@@ -192,8 +215,7 @@ def series_overview(symbol: str, days: int = 30) -> dict:
                      "daily_volatility_pct": round(statistics.pstdev(rets) * 100, 3)}}
     idx = benchmark(sym)
     if idx:
-        try:
-            out |= {"index": idx, "index_name": INDEXES[idx], "index_points": fetch_series(idx, days)}
-        except Exception:  # 大盘查不到不影响股票本身的展示
-            pass
+        code, b = _index_series(idx, days, {d for d, _ in pts})
+        if b:  # 大盘查不到不影响股票本身的展示
+            out |= {"index": code, "index_name": INDEXES[code], "index_points": sorted(b.items())}
     return out

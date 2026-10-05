@@ -119,6 +119,10 @@ def rule_check(case: dict, result: dict) -> tuple[bool, list[str]]:
         if not any(c["name"] == o["name"] and _arg_match(o.get("args", {}), c["args"]) for o in options for c in calls):
             want = " 或 ".join(f"{o['name']}{json.dumps(o.get('args', {}), ensure_ascii=False)}" for o in options)
             problems.append(f"没有按预期调用 {want}")
+    for name, args in case.get("keep_args", {}).items():  # 调用了这个工具时，参数必须是用户给的原值，不能擅自改
+        for c in calls:
+            if c["name"] == name and not _arg_match(args, c["args"]):
+                problems.append(f"擅自改了用户给的参数：{name}{json.dumps(c['args'], ensure_ascii=False)}")
     for name in case.get("forbid_calls", []):
         if any(c["name"] == name for c in calls):
             problems.append(f"不该调用 {name}")

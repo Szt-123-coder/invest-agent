@@ -87,3 +87,11 @@ def test_evidence_check_reads_numbers_inside_text_and_list_lengths():
                        {"label": "提醒数量", "value": "0", "source": "list_alerts"}]}
     assert evidence_check(ev, outs) == []
     assert evidence_check({"evidence": [{"label": "x", "value": "6.80", "source": "search_news"}]}, outs)
+
+
+def test_rule_check_catches_changed_user_numbers():
+    case = {"keep_args": {"set_price_alert": {"target": -3}}}
+    changed = {"answer": "没有设置", "steps": [{"type": "tool_call", "name": "set_price_alert", "args": {"target": 3}}]}
+    assert any("擅自改了" in p for p in rule_check(case, changed)[1])
+    kept = {"answer": "没有设置", "steps": [{"type": "tool_call", "name": "set_price_alert", "args": {"target": -3}}]}
+    assert rule_check(case, kept)[0]

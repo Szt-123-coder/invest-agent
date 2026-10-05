@@ -12,6 +12,7 @@ from sqlalchemy import select
 from .. import db
 from ..db import dumps
 from ..resolve import to_code
+from .market import fetch_series
 
 
 def _fail(msg: str) -> str:
@@ -30,6 +31,15 @@ def set_price_alert(symbol: str, target: float, direction: str = "auto") -> str:
         return _fail(f"价位 {target!r} 不是数字")
     if target <= 0:
         return _fail("价位必须大于 0")
+    try:
+        price = fetch_series(sym, 5)[-1][1]
+    except Exception:  # 查不到现价就不检查，照常设置
+        price = None
+    if price is not None and ((direction == "down" and price <= target) or (direction == "up" and price >= target)):
+        where = "低于" if direction == "down" else "高于"
+        return _fail(f"{sym} 现在是 {price}，已经{where}目标 {target}，这个提醒会立刻触发。"
+                     f"请和用户确认：是想等它{'跌破更低' if direction == 'down' else '涨过更高'}的价位，"
+                     f"还是等它{'涨回' if direction == 'down' else '跌回'} {target}")
     with db.session() as s:
         a = db.Alert(symbol=sym, kind="price", direction=direction, target=target)
         s.add(a)
